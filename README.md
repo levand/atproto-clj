@@ -8,6 +8,22 @@
 
 Work very much in progress
 
+### Progress
+
+| Feature      | Status |
+|--------------|--------|
+| http client  | 🟡    |
+| identifiers  | 🔴    |
+| bsky         | 🔴    |
+| crypto       | 🔴    |
+| mst          | 🔴    |
+| lexicon      | 🔴    |
+| identity     | 🔴    |
+| streaming    | 🔴    |
+| service auth | 🔴    |
+| plc          | 🔴    |
+| oauth server | 🔴    |
+
 ### References
 
 - [Existing SDKs](https://atproto.com/sdks)
