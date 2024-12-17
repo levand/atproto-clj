@@ -61,3 +61,7 @@ The client is using [Martian](https://github.com/oliyh/martian/) under the hood 
 ## Contribute
 
 Help is very much welcomed! Please reach out on 🦋 [@gosha.net](https://bsky.app/profile/gosha.net)!
+
+## License
+
+MIT, see LICENSE file
