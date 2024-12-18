@@ -9,7 +9,9 @@
 (defn add-authentication-header [token]
   {:name ::add-authentication-header
    :enter (fn [ctx]
-            (assoc-in ctx [:request :headers "Authorization"] (str "Bearer " token)))})
+            (if token
+              (assoc-in ctx [:request :headers "Authorization"] (str "Bearer " token))
+              ctx))})
 
 (def api (martian-http/bootstrap-openapi
            openapi-url
