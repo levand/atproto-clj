@@ -19,7 +19,7 @@ Work very much in progress
 | mst          | 🔴     |
 | lexicon      | 🔴     |
 | identity     | 🔴     |
-| streaming    | 🔴     |
+| streaming    | 🟡     |
 | service auth | 🔴     |
 | plc          | 🔴     |
 | oauth server | 🔴     |
