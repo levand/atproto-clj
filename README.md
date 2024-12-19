@@ -26,7 +26,7 @@ Work very much in progress
 
 ## Usage
 
-### http client
+### HTTP client
 
 The client is using [Martian](https://github.com/oliyh/martian/) under the hood to handle the HTTP endpoints [published](https://github.com/bluesky-social/bsky-docs/tree/main/atproto-openapi-types) by the Bsky team in OpenAPI format
 
@@ -39,7 +39,7 @@ The client is using [Martian](https://github.com/oliyh/martian/) under the hood 
 ;; Authenticated client
 (def session (init :username "me.bsky.social"
                    :app-password "SECRET"
-                   :base-url " https://bsky.social"))
+                   :base-url "https://bsky.social"))
 
 
 ;; Bluesky endpoints and their query params can be found here:
