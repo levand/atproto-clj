@@ -37,9 +37,9 @@ The client is using [Martian](https://github.com/oliyh/martian/) under the hood 
 (def session (at/init :base-url "https://public.api.bsky.app"))
 
 ;; Authenticated client
-(def session (init :username "me.bsky.social"
-                   :app-password "SECRET"
-                   :base-url "https://bsky.social"))
+(def session (at/init :username "me.bsky.social"
+                      :app-password "SECRET"
+                      :base-url "https://bsky.social"))
 
 
 ;; Bluesky endpoints and their query params can be found here:
@@ -96,7 +96,11 @@ Check out the `examples.jetstream-analysis` namespace for a complete example of 
 
 ## Contribute
 
-Help is very much welcomed! Please reach out on 🦋 [@gosha.net](https://bsky.app/profile/gosha.net)!
+Help is very much welcomed!
+
+Before submitting a pull request, please take a look at the [Issues](https://github.com/goshatch/atproto-clojure/issues) to see if the topic you are interested in is already being discussed, and if it is not, please create an Issue to discuss it before making a PR.
+
+For anything else, please reach out on 🦋: [@gosha.net](https://bsky.app/profile/gosha.net)!
 
 ## License
 
