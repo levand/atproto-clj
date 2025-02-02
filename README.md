@@ -8,6 +8,9 @@
 
 Work very much in progress
 
+Multi-platform codebase designed to work in Clojure, ClojureScript and
+ClojureDart.
+
 ## Progress
 
 | Feature      | Status |
@@ -26,30 +29,47 @@ Work very much in progress
 
 ## Usage
 
-### HTTP client
+### ATProto client
 
-The client is using [Martian](https://github.com/oliyh/martian/) under the hood to handle the HTTP endpoints [published](https://github.com/bluesky-social/bsky-docs/tree/main/atproto-openapi-types) by the Bsky team in OpenAPI format
+The workflow for utilizing the client is to:
+
+1. Obtain a session by specifying the ATProto endpoint and (optionally) authentication credentials.
+2. Use the session to make `query` or `procedure` calls to [ATProto](https://atproto.com/specs/xrpc#lexicon-http-endpoints) or [Bluesky](https://docs.bsky.app/docs/category/http-reference) endpoints.
+
+A session is a thread-safe, stateful object containing the information required to make ATProto HTTP requests.
+
+All calls use the "NSID" of the query or procedure, and a Clojure map of parameters/input. All queries are asynchronous, and return immediately. The return value depends on platform:
+
+- Clojure: a Clojure promise.
+- ClojureScript: a core.async channel.
+- ClojureDart: a Dart Watchable.
+
+You can also provide a `:channel`, `:callback` or `:promise` keyword option to recieve the return value. Not all options are supported on all platforms.
 
 ```clojure
 (require '[net.gosha.atproto.client :as at])
 
 ;; Unauthenticated client
-(def session (at/init :base-url "https://public.api.bsky.app"))
+(def session (at/init "https://public.api.bsky.app"))
 
-;; Authenticated client
-(def session (at/init :username "me.bsky.social"
-                      :app-password "SECRET"
-                      :base-url "https://bsky.social"))
-
+;; Password-based authenticated client
+(def session (at/init "https://bsky.social"
+               :identifier "me.bsky.social"
+               :password "SECRET"))
 
 ;; Bluesky endpoints and their query params can be found here:
 ;; https://docs.bsky.app/docs/category/http-reference
-(let [resp (at/call session :app.bsky.actor.get-profile {:actor "gosha.net"})]
-  (select-keys (:body @resp) [:handle :displayName :createdAt :followersCount]))
+
+@(at/query session :app.bsky.actor.get-profile {:actor "gosha.net"})
 ;; => {:handle "gosha.net",
-;; :displayName "Gosha ⚡",
-;; :createdAt "2023-05-08T19:08:05.781Z",
-;; :followersCount 617}
+;;     :displayName "Gosha ⚡",
+;;     :did "did:plc:ypjjs7u7owjb7xmueb2iw37u",
+;;     ......}
+
+;; Using core.async
+(def result (async/chan))
+(at/query sess :app.bsky.actor.getProfile {:actor "gosha.net"} :channel result)
+(async/<!! result)
 ```
 
 ### Jetstream
