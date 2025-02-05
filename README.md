@@ -60,7 +60,7 @@ You can also provide a `:channel`, `:callback` or `:promise` keyword option to r
 ;; Bluesky endpoints and their query params can be found here:
 ;; https://docs.bsky.app/docs/category/http-reference
 
-@(at/query session :app.bsky.actor.get-profile {:actor "gosha.net"})
+@(at/query session :app.bsky.actor.getProfile {:actor "gosha.net"})
 ;; => {:handle "gosha.net",
 ;;     :displayName "Gosha ⚡",
 ;;     :did "did:plc:ypjjs7u7owjb7xmueb2iw37u",

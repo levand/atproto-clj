@@ -123,6 +123,11 @@
     {:endpoint endpoint
      :interceptors interceptors}))
 
+(defn- extract-response
+  [ctx]
+  (with-meta (::i/response ctx)
+    {:ctx ctx}))
+
 (defn- exec
   "Given an XRPC request, execute it against the specified session. The
    mechanism for returning results is specified via a :channel, :callback, or
@@ -133,14 +138,14 @@
         channel #?(:cljs (if (empty? opts) (a/chan) channel)
                    :default channel)
         cb (cond
-             channel #?(:clj #(a/>!! channel (::i/response %))
-                        :cljs #(a/go (a/>! channel (::i/response %)))
+             channel #?(:clj #(a/>!! channel (extract-response %))
+                        :cljs #(a/go (a/>! channel (extract-response %)))
                         :cljd #(throw (ex-info
                                          "core.async not supported" {})))
-             promise #?(:clj #(deliver promise (::i/response %))
+             promise #?(:clj #(deliver promise (extract-response %))
                         :default #(throw (ex-info
                                            "JVM promises not supported" {})))
-             callback #(callback (::i/response %)))]
+             callback #(callback (extract-response %)))]
     (i/execute (assoc session
                  ::i/queue (:interceptors session)
                  ::i/request request) cb)

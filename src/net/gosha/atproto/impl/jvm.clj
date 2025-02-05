@@ -36,4 +36,5 @@
                                    {:error (.getName (.getClass error))
                                     :message (.getMessage error)
                                     :exception error}))
-                     (i/continue (assoc ctx ::i/response resp))))))})
+                     (i/continue (assoc ctx ::i/response resp
+                                            ::response resp))))))})
