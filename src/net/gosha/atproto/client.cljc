@@ -115,55 +115,35 @@
 
    - `:identifier` + `:password` - Password-based authentication"
   [endpoint & {:keys [:identifier :password] :as opts}]
-  (let [interceptors (concat
-                       [xrpc-interceptor]
-                       (when identifier
-                         [(password-auth-interceptor identifier password)])
-                       (impl-interceptors))]
-    {:endpoint endpoint
-     :interceptors interceptors}))
+  {:endpoint endpoint
+   :http-interceptors (impl-interceptors)
+   :auth-interceptors (when password
+                        [(password-auth-interceptor identifier password)])})
 
-(defn- extract-response
-  [ctx]
-  (with-meta (::i/response ctx)
-    {:ctx ctx}))
-
-(defn- exec
+(defn- exec-xrpc
   "Given an XRPC request, execute it against the specified session. The
    mechanism for returning results is specified via a :channel, :callback, or
    :promise keyword arg, defaulting to a platform-appropriate type."
-  [session request & {:keys [:channel :callback :promise] :as opts}]
-  (let [promise #?(:clj (if (empty? opts) (clojure.core/promise) promise)
-                   :default promise)
-        channel #?(:cljs (if (empty? opts) (a/chan) channel)
-                   :default channel)
-        cb (cond
-             channel #?(:clj #(a/>!! channel (extract-response %))
-                        :cljs #(a/go (a/>! channel (extract-response %)))
-                        :cljd #(throw (ex-info
-                                         "core.async not supported" {})))
-             promise #?(:clj #(deliver promise (extract-response %))
-                        :default #(throw (ex-info
-                                           "JVM promises not supported" {})))
-             callback #(callback (extract-response %)))]
-    (i/execute (assoc session
-                 ::i/queue (:interceptors session)
-                 ::i/request request) cb)
-    (or channel promise)))
+  [session request & {:as opts}]
+  (i/execute (assoc session
+               ::i/queue (concat [xrpc-interceptor]
+                           (:auth-interceptors session)
+                           (:http-interceptors session))
+               ::i/request request) opts))
 
 (defn query
   "Query using the provided NSID and parameters. The mechanism for returning
    results is specified via a :channel, :callback, or :promise keyword arg,
    which is returned. Defaults to a platform-appropriate type."
   [session nsid parameters & {:as opts}]
-  (exec session {:nsid nsid :parameters parameters} opts))
+  (exec-xrpc session {:nsid nsid :parameters parameters} opts))
 
 (defn procedure
   "Execute a procedure using the provided NSID and parameters. The mechanism
    for returning results is specified via a :channel, :callback, or :promise
    keyword arg which is returned. Defaults to a platform-appropriate type."
   [session nsid input & {:as opts}]
-  (exec session {:nsid nsid :input input} opts))
+  (exec-xrpc session {:nsid nsid :input input} opts))
 
 ;; TODO: Validate by reading Lexicon files, and converting to schema/spec/other
 (defn validate

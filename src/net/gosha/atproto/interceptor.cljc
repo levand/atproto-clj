@@ -40,7 +40,8 @@
   - ::response - The response object (present only for `leave` phase.)
 
   Errors are represented as response objects with an `:error` key indicating
-  the error type, and a `:message` key with a human-readable error message.")
+  the error type, and a `:message` key with a human-readable error message."
+  (:require #?@(:cljd [] :default [[clojure.core.async :as a]])))
 
 (declare continue)
 
@@ -111,10 +112,32 @@
   [{:keys [::response] :as ctx}]
   (if response (leave ctx) (enter ctx)))
 
+(defn- extract-response
+  [ctx]
+  (with-meta (::response ctx)
+    {::ctx ctx}))
+
 (defn execute
-  "Execute an interceptor chain starting with the context, passing the
-  final context to the provided callback."
-  [ctx callback]
-  (let [final {::name ::execute ::leave callback}
+  "Execute an interceptor chain, returning the final response using the
+   requested async mechanism as specified in `opts`. Defaults to a
+   platform-appropriate mechanism.
+
+   The final context is added to the response as metadata, for debug purposes."
+  [ctx & {:keys [:channel :callback :promise] :as opts}]
+  (let [promise #?(:clj (if (empty? opts) (clojure.core/promise) promise)
+                   :default promise)
+        channel #?(:cljs (if (empty? opts) (a/chan) channel)
+                   :default channel)
+        cb (cond
+             channel #?(:clj #(a/>!! channel (extract-response %))
+                        :cljs #(a/go (a/>! channel (extract-response %)))
+                        :cljd #(throw (ex-info
+                                        "core.async not supported" {})))
+             promise #?(:clj #(deliver promise (extract-response %))
+                        :default #(throw (ex-info
+                                           "JVM promises not supported" {})))
+             callback #(callback (extract-response %)))
+        final {::name ::execute ::leave cb}
         ctx (update ctx ::queue #(cons final %))]
-    (enter ctx)))
+    (enter ctx)
+    (or channel promise)))
