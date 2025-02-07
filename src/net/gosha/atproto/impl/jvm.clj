@@ -8,7 +8,8 @@
   "Test if a request or response should be interpreted as json"
   [req-or-resp]
   (when-let [ct (:content-type (:headers req-or-resp))]
-    (.startsWith ct "application/json")))
+    (or (.startsWith ct "application/json")
+        (.startsWith ct "application/did+ld+json"))))
 
 (def json-interceptor
   "Interceptor for JSON request and response bodies"

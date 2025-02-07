@@ -54,7 +54,9 @@
       (if (not f)
         ctx
         (let [ret (f ctx)]
-          (if (and ret (not (and (map? ret) (contains? ret ::request))))
+          (if (and ret (not (and (map? ret)
+                              (or (contains? ret ::queue)
+                                  (contains? ret ::stack)))))
             {::request ::missing
              ::response {:error "Invalid Interceptor Context"
                          :message (str "Phase " phase " of " (::name i)
@@ -75,7 +77,7 @@
   (if (empty? stack)
     ctx
     (let [current (first stack)
-          ctx' (assoc ctx ::stack (rest stack))
+          ctx' (assoc ctx ::stack (rest stack) ::queue (cons current queue))
           ctx'' (try-invoke current ::leave ctx')]
       (when ctx'' (continue ctx'')))))
 
@@ -83,7 +85,9 @@
   "Execute the enter phase of an interceptor context."
   [{:keys [::queue ::stack] :as ctx}]
   (if (empty? queue)
-    (leave ctx)
+    (leave (assoc ctx ::response
+             {:error "NoResponseInterceptor"
+              :message "No interceptor returned a response"}))
     (let [current (first queue)
           ctx' (assoc ctx ::stack (cons current stack) ::queue (rest queue))
           ctx'' (try-invoke current ::enter ctx')]
@@ -112,32 +116,50 @@
   [{:keys [::response] :as ctx}]
   (if response (leave ctx) (enter ctx)))
 
-(defn- extract-response
+(defn response
+  "Given a context, return the response (with the context as metadata,
+   if possible.)"
   [ctx]
-  (with-meta (::response ctx)
-    {::ctx ctx}))
+  (let [r (::response ctx)]
+    (if (coll? r) (with-meta r (merge (meta r) ctx)) r)))
+
+(defn platform-async
+  "Given an options map, return a tuple of [cb async-val]. `cb` is a function
+   that should be called to deliver an asyncronous response, and `async-val`
+   is the deferred value (as specified by the options.)
+
+   If no options are provided, returns a platform-appropriate deferred type."
+  [& {:keys [:channel :callback :promise] :as opts}]
+  (let [promise #?(:clj (if (empty? opts)
+                           (clojure.core/promise)
+                            (:promise opts))
+                     :default (:promise opts))
+        channel #?(:cljs (if (empty? opts)
+                           (a/chan)
+                           (:channel opts))
+                     :default (:channel opts))
+        callback (cond
+                   channel #?(:clj #(a/>!! channel %)
+                              :cljs #(a/go (a/>! channel %))
+                              :cljd #(throw (ex-info
+                                              "core.async not supported"
+                                              {})))
+                   promise #?(:clj #(deliver promise %)
+                              :default #(throw (ex-info
+                                                 "JVM promises not supported"
+                                                 {})))
+                   (:callback opts) (:callback opts))]
+    [callback (or channel promise)]))
 
 (defn execute
-  "Execute an interceptor chain, returning the final response using the
-   requested async mechanism as specified in `opts`. Defaults to a
-   platform-appropriate mechanism.
+  "Execute an interceptor chain, returning the final result using the requested
+   async mechanism as specified in `opts`.
 
-   The final context is added to the response as metadata, for debug purposes."
-  [ctx & {:keys [:channel :callback :promise] :as opts}]
-  (let [promise #?(:clj (if (empty? opts) (clojure.core/promise) promise)
-                   :default promise)
-        channel #?(:cljs (if (empty? opts) (a/chan) channel)
-                   :default channel)
-        cb (cond
-             channel #?(:clj #(a/>!! channel (extract-response %))
-                        :cljs #(a/go (a/>! channel (extract-response %)))
-                        :cljd #(throw (ex-info
-                                        "core.async not supported" {})))
-             promise #?(:clj #(deliver promise (extract-response %))
-                        :default #(throw (ex-info
-                                           "JVM promises not supported" {})))
-             callback #(callback (extract-response %)))
-        final {::name ::execute ::leave cb}
+  Defaults to a platform-appropriate async mechanism."
+  [ctx & {:as opts}]
+  (let [resp-fn (or (:resp-fn opts) response)
+        [cb val] (platform-async (dissoc opts :resp-fn))
+        final {::name ::execute ::leave #(cb (resp-fn %))}
         ctx (update ctx ::queue #(cons final %))]
     (enter ctx)
-    (or channel promise)))
+    val))
