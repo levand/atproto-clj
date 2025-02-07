@@ -30,11 +30,6 @@
   []
   #?(:clj [jvm/json-interceptor, jvm/httpkit-handler]))
 
-(defn- add-auth-header
-  [ctx token]
-  (assoc-in ctx [::i/request :headers "Authorization"]
-    (str "Bearer " token)))
-
 (declare procedure)
 
 (def auth-header-interceptor

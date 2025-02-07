@@ -38,7 +38,9 @@ The workflow for utilizing the client is to:
 
 A session is a thread-safe, stateful object containing the information required to make ATProto HTTP requests.
 
-All calls use the "NSID" of the query or procedure, and a Clojure map of parameters/input. All queries are asynchronous, and return immediately. The return value depends on platform:
+`query` and `procedure` calls use the "NSID" of the query or procedure, and a Clojure map of parameters/input.
+
+All calls (including the call to `init`) are asynchronous, and return immediately. The return value depends on platform:
 
 - Clojure: a Clojure promise.
 - ClojureScript: a core.async channel.
@@ -46,16 +48,20 @@ All calls use the "NSID" of the query or procedure, and a Clojure map of paramet
 
 You can also provide a `:channel`, `:callback` or `:promise` keyword option to recieve the return value. Not all options are supported on all platforms.
 
+
 ```clojure
 (require '[net.gosha.atproto.client :as at])
 
-;; Unauthenticated client
-(def session (at/init "https://public.api.bsky.app"))
+;; Unauthenticated client to default endpoint
+(def session @(at/init))
+
+;; Unauthenticated client to a particular server
+(def session @(at/init :endpoint "https://public.api.bsky.app"))
 
 ;; Password-based authenticated client
-(def session (at/init "https://bsky.social"
-               :identifier "me.bsky.social"
-               :password "SECRET"))
+;; Defaults to looking up and using the identifier's PD server
+(def session @(at/init :identifier "me.bsky.social"
+                      :password "SECRET"))
 
 ;; Bluesky endpoints and their query params can be found here:
 ;; https://docs.bsky.app/docs/category/http-reference
@@ -68,7 +74,7 @@ You can also provide a `:channel`, `:callback` or `:promise` keyword option to r
 
 ;; Using core.async
 (def result (async/chan))
-(at/query sess :app.bsky.actor.getProfile {:actor "gosha.net"} :channel result)
+(at/query session :app.bsky.actor.getProfile {:actor "gosha.net"} :channel result)
 (async/<!! result)
 ```
 
