@@ -36,7 +36,6 @@
   "Interceptor to add auth headers"
   {::i/name ::auth-headers
    ::i/enter (fn enter-auth-headers [{:keys [auth refresh?] :as ctx}]
-               (println "adding auth header: refresh=" refresh?)
                (assoc-in ctx [::i/request :headers "Authorization"]
                  (str "Bearer " (if refresh?
                                   (:refreshJwt @auth)
