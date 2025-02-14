@@ -1,4 +1,4 @@
-(ns net.gosha.atproto.client
+(ns atproto.client
   "Cross-platform API.
 
   All functions are async, and follow the same pattern for specifying how
@@ -9,10 +9,10 @@
   Not all mechanisms are supported on all platforms. If no result mechanism is
   specified, a platform-appropriate deferred value (e.g. promise or core.async
   channel will be returned.)"
-  (:require [net.gosha.atproto.interceptor :as i]
+  (:require [atproto.interceptor :as i]
             [clojure.string :as str]
             #?@(:cljd [] :default [[clojure.core.async :as a]])
-            #?(:clj [net.gosha.atproto.impl.jvm :as jvm])))
+            #?(:clj [atproto.impl.jvm :as jvm])))
 
 (defn- success?
   [code]

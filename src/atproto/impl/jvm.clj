@@ -1,7 +1,7 @@
-(ns net.gosha.atproto.impl.jvm
+(ns atproto.impl.jvm
   "JVM interceptor implementations"
   (:require [charred.api :as json]
-            [net.gosha.atproto.interceptor :as i]
+            [atproto.interceptor :as i]
             [org.httpkit.client :as http]))
 
 (defn- json-content-type?

@@ -1,9 +1,3 @@
-<p>
-  <img src="https://raw.github.com/goshatch/atproto-clojure/main/resources/logo.png"
-  alt="Absolute Terror Protocol"
-  style="max-width:300px;" />
-</p>
-
 # atproto Clojure SDK
 
 Work very much in progress
@@ -50,7 +44,7 @@ You can also provide a `:channel`, `:callback` or `:promise` keyword option to r
 
 
 ```clojure
-(require '[net.gosha.atproto.client :as at])
+(require '[atproto.client :as at])
 
 ;; Unauthenticated client to default endpoint
 (def session @(at/init))
@@ -83,7 +77,7 @@ You can also provide a `:channel`, `:callback` or `:promise` keyword option to r
 Connect to Bluesky's [Jetstream service](https://docs.bsky.app/blog/jetstream) to get real-time updates of public network data. Jetstream provides a JSON-based alternative to the binary CBOR firehose, making it easier to work with post streams, likes, follows, and other events.
 
 ```clojure
-(require '[net.gosha.atproto.jetstream :as jetstream]
+(require '[atproto.jetstream :as jetstream]
          '[clojure.core.async          :as async]
          '[examples.jetstream-analysis :as analysis]))
 
@@ -125,8 +119,6 @@ Check out the `examples.jetstream-analysis` namespace for a complete example of 
 Help is very much welcomed!
 
 Before submitting a pull request, please take a look at the [Issues](https://github.com/goshatch/atproto-clojure/issues) to see if the topic you are interested in is already being discussed, and if it is not, please create an Issue to discuss it before making a PR.
-
-For anything else, please reach out on 🦋: [@gosha.net](https://bsky.app/profile/gosha.net)!
 
 ## License
 

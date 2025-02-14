@@ -3,7 +3,7 @@
    [charred.api                 :as json]
    [clojure.core.async          :as async]
    [clojure.java.io             :as io]
-   [net.gosha.atproto.jetstream :as jetstream])
+   [atproto.jetstream :as jetstream])
   (:import
    [java.time Duration Instant]))
 
@@ -81,14 +81,14 @@
   (let [analysis-ch (async/chan 1024)
         state       (atom (create-analysis-state window-duration-seconds))
         mult        (async/mult (:events conn))]
-    
+
     (async/tap mult analysis-ch)
-    
+
     (async/go-loop []
       (when-let [msg (async/<! analysis-ch)]
         (swap! state process-message! msg)
         (recur)))
-    
+
     {:state       state
      :analysis-ch analysis-ch}))
 
@@ -102,7 +102,7 @@
      :total-size    (format-bytes total-raw-bytes)
      :total-content (format-bytes total-content-len)
      :avg-msg-size  (format-bytes (if (pos? (or message-count 0))
-                                   (float (/ (or total-raw-bytes 0) 
+                                   (float (/ (or total-raw-bytes 0)
                                            (max 1 message-count)))
                                    0))
      :max-msg-size  (format-bytes (or max-msg-size 0))
@@ -113,7 +113,7 @@
 
     {:message-count 0
      :total-size    "0 B"
-     :total-content "0 B"  
+     :total-content "0 B"
      :avg-msg-size  "0 B"
      :max-msg-size  "0 B"
      :min-msg-size  "0 B"
@@ -147,7 +147,7 @@
   [{:keys [analysis-ch state]}]
   (when state
     (swap! state assoc :stop-time (Instant/now)))
-  (when analysis-ch 
+  (when analysis-ch
     (async/close! analysis-ch)))
 
 
@@ -182,9 +182,9 @@
         samples   (atom [])
         sample-ch (async/chan 1024)
         mult      (async/mult (:events conn))]
-    
+
     (async/tap mult sample-ch)
-    
+
     (async/go-loop []
       (if-let [msg (async/<! sample-ch)]
         (do
@@ -197,7 +197,7 @@
               (async/close! done-ch))
             (recur)))
         (async/close! done-ch)))
-    
+
     {:filename filename
      :done-ch  done-ch}))
 
@@ -209,39 +209,39 @@
 
 
 (comment
-  
+
   ;; Example usage for firehose analysis
   (def conn (jetstream/connect-jetstream (async/chan 1024)))
   (def analysis (start-analysis conn :window-duration-seconds 60))
-  
+
   ;; Get current stats while running
   (get-summary @(:state analysis))
-  
+
   ;; Stop and get final stats
   (stop-analysis analysis)
   (get-summary @(:state analysis))
-  
+
   ;; Cleanup firehose connection
   (jetstream/disconnect conn)
 
 
   ;; Example usage for sample collection
   (def conn (jetstream/connect-jetstream (async/chan 1024)))
-  
+
   ;; Collect 10 messages
   (def collection (collect-samples conn 10))
-  
+
   ;; Wait for collection to complete
   (async/<!! (:done-ch collection))
-  
+
   ;; The samples are now saved in samples/firehose-{timestamp}.json
   ;; You can also specify a custom filename:
-  (collect-samples conn 5 
+  (collect-samples conn 5
                   :filename "samples/small-sample.json")
-  
+
   ;; Read saved samples back
   (read-samples "samples/small-sample.json")
-  
+
   ;; Cleanup
   (jetstream/disconnect conn)
   ,)

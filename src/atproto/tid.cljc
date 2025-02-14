@@ -1,4 +1,4 @@
-(ns net.gosha.atproto.tid
+(ns atproto.tid
   (:require [clojure.string :as str]))
 
 (def base32-sortable "234567abcdefghijklmnopqrstuvwxyz")

@@ -1,4 +1,4 @@
-(ns net.gosha.atproto.utils)
+(ns atproto.utils)
 
 (defn validate-response
   "Check if the API response contains an error"

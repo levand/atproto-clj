@@ -1,4 +1,4 @@
-(ns net.gosha.atproto.jetstream
+(ns atproto.jetstream
   (:require
    [charred.api           :as json]
    [clojure.core.async    :as async]
@@ -7,8 +7,8 @@
    [java.net URI]
    [org.java_websocket.client WebSocketClient]))
 
-(def parse-fn 
-  (json/parse-json-fn 
+(def parse-fn
+  (json/parse-json-fn
    {:key-fn  keyword
     :profile :mutable ; Use mutable datastructures for better performance
     :async?  false    ; Disable async for small messages
@@ -28,22 +28,22 @@
    "Creates a WebSocket client connected to the Bluesky firehose at the specified URI.
     Messages are parsed as JSON and put onto the output channel with a timeout to prevent
     blocking. Messages will be dropped if the channel is full for more than 100ms.
-  
+
     Arguments:
       uri       - Complete WebSocket URI including query parameters
       output-ch - Channel to receive parsed messages
-  
+
     Returns:
       WebSocketClient instance configured with handlers for connection events"
   [uri output-ch]
-  (doto 
+  (doto
     (proxy [WebSocketClient] [(URI. uri)]  ; Just use the URI as provided
       (onOpen [_]
         (log/info "Connected to firehose"))
-      
+
       (onClose [code reason remote]
         (log/info "Disconnected from firehose:" reason))
-      
+
       (onMessage [message]
         (try
           (when-let [data (parse-fn message)]
@@ -51,25 +51,25 @@
                               [[output-ch data]] :ok
                               (async/timeout 100) :full)]
               (when (= put-result :full)
-                (warn-rate-limited 10000 
+                (warn-rate-limited 10000
                   "Buffer full - dropping message. Consider increasing buffer size or processing messages faster."))))
           (catch Exception e
             (log/error "Parse error:" (.getMessage e)))))
-      
+
       (onError [^Exception ex]
         (log/error "WebSocket error:" (.getMessage ex))))
     (.setConnectionLostTimeout 60)))
 
 (defn connect-jetstream
   "Connects to the Bluesky firehose WebSocket service. Messages are automatically parsed
-   from JSON and placed on the provided channel. Uses a non-blocking put with 100ms 
+   from JSON and placed on the provided channel. Uses a non-blocking put with 100ms
    timeout - messages will be dropped if the channel remains full.
-  
+
    Arguments:
      output-ch - Channel to receive parsed messages
      :service  - Optional base service URL (default: \"wss://jetstream2.us-east.bsky.network\")
      :query    - Optional query string (default: \"?wantedCollections=app.bsky.feed.post\")
-  
+
    Returns:
      Map containing:
        :client - The WebSocket client instance
@@ -85,7 +85,7 @@
 
 (defn disconnect
   [{:keys [client events]}]
-  (when events 
+  (when events
     (async/close! events))
   (when client
     ;; Give a short grace period for any pending operations
@@ -99,15 +99,15 @@
   (def conn (connect-jetstream (async/chan 10000)))
 
   (def conn (connect-jetstream (async/chan (async/sliding-buffer 1024))))
-  
+
   ;; Or specify different query params
-  (def conn (connect-jetstream (async/chan 1024) 
+  (def conn (connect-jetstream (async/chan 1024)
                               :query "?wantedCollections=app.bsky.feed.like"))
-  
+
   (let [event (async/alt!!
                 (:events conn) ([v] v)
                 (async/timeout 5000) :timeout)]
     (clojure.pprint/pprint event))
-  
+
   (disconnect conn)
   ,)

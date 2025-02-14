@@ -22,4 +22,4 @@ pom.xml.asc
 /samples
 
 resources/dev-config.edn
-src/net/gosha/atproto/scratch.clj
+src/atproto/scratch.clj

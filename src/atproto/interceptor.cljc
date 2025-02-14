@@ -1,4 +1,4 @@
-(ns net.gosha.atproto.interceptor
+(ns atproto.interceptor
   "Simplified, callback-based implementation of the interceptor pattern.
 
   Interceptors are maps with ::enter and/or ::leave keys, with _interceptor
