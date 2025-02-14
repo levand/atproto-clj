@@ -45,39 +45,27 @@
   "Interceptor that refreshes and retries expired tokens"
   {::i/name ::refresh-tokens
    ::i/leave (fn leave-refresh-tokens [{:keys [::i/response] :as ctx}]
-               (if-not (= "ExpiredToken" (-> response :body :error))
-                 ctx
+               (if (and (= "ExpiredToken" (-> response :body :error))
+                     (not (:refresh? ctx)))
                  (procedure (assoc ctx :refresh? true)
                    :com.atproto.server.refreshSession
                    {}
                    :callback (fn [resp]
                                (if (:error resp)
-                                 (i/continue (assoc ctx ::i/response resp))
+                                 (i/continue
+                                   (assoc ctx ::i/response resp))
                                  (do
                                    (reset! (:auth ctx) resp)
                                    (i/continue
-                                     (dissoc ctx ::i/response))))))))})
+                                     (dissoc ctx
+                                       ::i/response
+                                       :refresh?)))))) ctx))})
 
 
-(def xrpc-interceptor
-  "Construct an interceptor that converts XRPC requests to HTTP requests against
-  the provided endpoint.
-
-  An XRPC request has a :nsid and either :parameters or :input. :parameters
-  indicates an XRPC 'query' (GET request) while `input` indicates a 'procedure'
-  (POST request)."
+(def xrpc-response
+  "Response interceptor that extracts the content of an XRPC response into an
+   appropriate map."
   {::i/name ::xrpc
-   ::i/enter (fn xrpc-enter [{:keys [::i/request :endpoint] :as ctx}]
-               (let [url (str endpoint "/xrpc/" (name (:nsid request)))
-                     req (if-let [input (:input request)]
-                           (if (empty? input)
-                             {:method :post}
-                             {:method :post
-                              :body (:input request)
-                              :headers {"content-type" "application/json"}})
-                           {:method :get
-                            :query-params (:parameters request)})]
-                 (assoc ctx ::i/request (assoc req :url url))))
    ::i/leave (fn xrpc-leave [{:keys [::i/response] :as ctx}]
                (cond
                  (:error response)
@@ -154,28 +142,49 @@
       (select-keys opts [:promise :callback :channel]))))
 
 (defn- exec-xrpc
-  "Given an XRPC request, execute it against the specified session. The
-   mechanism for returning results is specified via a :channel, :callback, or
-   :promise keyword arg, defaulting to a platform-appropriate type."
+  "Given an XRPC request, execute it against the specified session."
   [session request & {:as opts}]
   (i/execute (-> session
                (assoc ::i/queue (concat
-                                  [xrpc-interceptor]
+                                  [xrpc-response]
                                   (:interceptors session)
                                   (impl-interceptors)))
                (assoc ::i/request request)
                (dissoc ::i/response))
     opts))
 
+(defn- url
+  "Construct a URL given a session and a NSID"
+  [{:keys [endpoint]} nsid]
+  (str endpoint "/xrpc/" (name nsid)))
+
 (defn query
   "Query using the provided NSID and parameters."
-  [session nsid parameters & {:as opts}]
-  (exec-xrpc session {:nsid nsid :parameters parameters} opts))
+  [session nsid parameters & {:keys [headers] :as opts}]
+  (exec-xrpc session {:url (url session nsid)
+                      :method :get
+                      :query-params parameters
+                      :headers headers} opts))
 
 (defn procedure
-  "Execute a procedure using the provided NSID and parameters."
-  [session nsid input & {:as opts}]
-  (exec-xrpc session {:nsid nsid :input input} opts))
+  "Execute a procedure using the provided NSID and input.
+
+  Input can be a map or arbitrary binary data. If binary data, a `:content-type`
+  header should be provided."
+  [session nsid input & {:keys [headers] :as opts}]
+  (let [body (if (and (coll? input) (empty? input))
+               nil
+               input)
+        headers (cond
+                  (:content-type headers) headers
+                  (not body) headers
+                  (coll? body) (assoc headers :content-type "application/json")
+                  :else (throw (ex-info "Must supply content-type header" {})))]
+    (exec-xrpc session (cond-> {:url (url session nsid)
+                                :method :post}
+                         body (assoc :body body)
+                         headers (assoc :headers headers))
+      opts)))
 
 (defn resolve-handle
   "Resolve the given handle to a DID."

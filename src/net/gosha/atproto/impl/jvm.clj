@@ -26,16 +26,26 @@
                    #(json/read-json % :key-fn keyword))
                  ctx))})
 
+(defn- normalize-headers
+  "Convert keyword keys to strings for a header"
+  [headers]
+  (when headers
+    (zipmap
+      (map name (keys headers))
+      (vals headers))))
+
 (def httpkit-handler
   "Interceptor to handle HTTP requests using httpkit"
   {::i/name ::http
    ::i/enter (fn enter-httpkit [ctx]
-               (http/request (::i/request ctx)
-                 (fn [{:keys [error] :as resp}]
-                   (if error
-                     (i/continue (assoc ctx ::i/response
-                                   {:error (.getName (.getClass error))
-                                    :message (.getMessage error)
-                                    :exception error}))
-                     (i/continue (assoc ctx ::i/response resp
-                                            ::response resp))))))})
+               (let [ctx (update-in ctx [::i/request :headers]
+                           normalize-headers)]
+                 (http/request (::i/request ctx)
+                   (fn [{:keys [error] :as resp}]
+                     (if error
+                       (i/continue (assoc ctx ::i/response
+                                     {:error (.getName (.getClass error))
+                                      :message (.getMessage error)
+                                      :exception error}))
+                       (i/continue (assoc ctx ::i/response resp
+                                     ::response resp)))))))})

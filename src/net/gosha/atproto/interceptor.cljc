@@ -157,9 +157,9 @@
 
   Defaults to a platform-appropriate async mechanism."
   [ctx & {:as opts}]
-  (let [resp-fn (or (:resp-fn opts) response)
-        [cb val] (platform-async (dissoc opts :resp-fn))
-        final {::name ::execute ::leave #(cb (resp-fn %))}
+  (let [opts (select-keys opts [:channel :callback :promise])
+        [cb val] (platform-async opts)
+        final {::name ::execute ::leave #(cb (response %))}
         ctx (update ctx ::queue #(cons final %))]
     (enter ctx)
     val))
