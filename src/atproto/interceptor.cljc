@@ -55,21 +55,21 @@
         ctx
         (let [ret (f ctx)]
           (if (and ret (not (and (map? ret)
-                              (or (contains? ret ::queue)
-                                  (contains? ret ::stack)))))
+                                 (or (contains? ret ::queue)
+                                     (contains? ret ::stack)))))
             {::request ::missing
              ::response {:error "Invalid Interceptor Context"
                          :message (str "Phase " phase " of " (::name i)
-                                    " returned a non-context value.")
+                                       " returned a non-context value.")
                          :return-value ret}}
             ret))))
     #?(:clj (catch Throwable t
               (assoc ctx ::response
-                {:error (.getName (.getClass t))
-                 :message (.getMessage t)
-                 :exception t
-                 :phase phase
-                 :interceptor (::name i)})))))
+                     {:error (.getName (.getClass t))
+                      :message (.getMessage t)
+                      :exception t
+                      :phase phase
+                      :interceptor (::name i)})))))
 
 (defn- leave
   "Execute the leave phase of an interceptor context."
@@ -86,8 +86,8 @@
   [{:keys [::queue ::stack] :as ctx}]
   (if (empty? queue)
     (leave (assoc ctx ::response
-             {:error "NoResponseInterceptor"
-              :message "No interceptor returned a response"}))
+                  {:error "NoResponseInterceptor"
+                   :message "No interceptor returned a response"}))
     (let [current (first queue)
           ctx' (assoc ctx ::stack (cons current stack) ::queue (rest queue))
           ctx'' (try-invoke current ::enter ctx')]
@@ -104,8 +104,8 @@
   interceptor exists"
   [ctx interceptor name]
   (let [[before after] (split-at (inc (first-index-of (::stack ctx)
-                                        #(= name (::name %))))
-                         (::stack ctx))]
+                                                      #(= name (::name %))))
+                                 (::stack ctx))]
     (assoc ctx ::stack (concat before [interceptor] after))))
 
 (defn continue
@@ -131,23 +131,23 @@
    If no options are provided, returns a platform-appropriate deferred type."
   [& {:keys [:channel :callback :promise] :as opts}]
   (let [promise #?(:clj (if (empty? opts)
-                           (clojure.core/promise)
-                            (:promise opts))
-                     :default (:promise opts))
+                          (clojure.core/promise)
+                          (:promise opts))
+                   :default (:promise opts))
         channel #?(:cljs (if (empty? opts)
                            (a/chan)
                            (:channel opts))
-                     :default (:channel opts))
+                   :default (:channel opts))
         callback (cond
                    channel #?(:clj #(a/>!! channel %)
                               :cljs #(a/go (a/>! channel %))
                               :cljd #(throw (ex-info
-                                              "core.async not supported"
-                                              {})))
+                                             "core.async not supported"
+                                             {})))
                    promise #?(:clj #(deliver promise %)
                               :default #(throw (ex-info
-                                                 "JVM promises not supported"
-                                                 {})))
+                                                "JVM promises not supported"
+                                                {})))
                    (:callback opts) (:callback opts))]
     [callback (or channel promise)]))
 
