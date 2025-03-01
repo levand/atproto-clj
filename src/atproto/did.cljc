@@ -208,16 +208,17 @@
 
 ;; DID document
 
-(defn pds
+(defn ^URL pds
   "The atproto personal data server declared in this DID document."
   [doc]
-  (some->> doc
-           :service
-           (filter (fn [service]
-                     (and (str/ends-with? (:id service) "#atproto_pds")
-                          (= "AtprotoPersonalDataServer" (:type service)))))
-           (first)
-           :serviceEndpoint))
+  (when-let [url-str (some->> doc
+                              :service
+                              (filter (fn [service]
+                                        (and (str/ends-with? (:id service) "#atproto_pds")
+                                             (= "AtprotoPersonalDataServer" (:type service)))))
+                              (first)
+                              :serviceEndpoint)]
+    (URL. url-str)))
 
 (defn handles
   "The atproto handles defined in this document."
