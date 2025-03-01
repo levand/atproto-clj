@@ -71,7 +71,7 @@
                        (update ::i/queue #(cons resolve-with-handle-interceptor %)))
 
                    :else
-                   (assoc ctx ::i/response {:error "Invalid handle."}))))})
+                   (assoc ctx ::i/response {:error "The input is neither a valid handle nor a valid DID."}))))})
 
 (defn resolve
   "Take a handle or DID and return a resolved identity.
