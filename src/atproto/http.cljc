@@ -1,5 +1,5 @@
 (ns atproto.http
-  "Cross-platform HTTP client for the atproto client."
+  "Cross-platform HTTP client."
   (:require [clojure.string :as str]
             #?(:clj [atproto.impl.jvm :as jvm])))
 

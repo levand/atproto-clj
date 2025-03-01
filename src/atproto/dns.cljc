@@ -1,5 +1,5 @@
 (ns atproto.dns
-  "Cross-platform DNS client for the atproto client."
+  "Cross-platform DNS client."
   (:require #?(:clj [atproto.impl.jvm :as jvm])))
 
 (def interceptor

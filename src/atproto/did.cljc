@@ -1,5 +1,5 @@
 (ns atproto.did
-  "Cross platform DID resolver for atproto.
+  "Cross platform DID resolver.
 
   Decentralized identifiers (DIDs) are persistent, long-term identifiers for atproto accounts.
 

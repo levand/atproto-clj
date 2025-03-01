@@ -35,16 +35,15 @@
                      conformed-handle (handle/conform handle)]
                  (if (= ::handle/invalid conformed-handle)
                    (assoc ctx ::i/response {:error "Invalid handle."})
-                   (i/execute {::i/queue [handle/resolve-interceptor]
-                               ::i/request {:handle conformed-handle}}
-                              :callback
-                              (fn [{:keys [error did] :as resp}]
-                                (i/continue
-                                 (if error
-                                   (assoc ctx ::i/response resp)
-                                   (-> ctx
-                                       (assoc ::i/request {:did did})
-                                       (update ::i/queue #(cons resolve-with-did-interceptor %))))))))))
+                   (handle/resolve conformed-handle
+                                   :callback
+                                   (fn [{:keys [error did] :as resp}]
+                                     (i/continue
+                                      (if error
+                                        (assoc ctx ::i/response resp)
+                                        (-> ctx
+                                            (assoc ::i/request {:did did})
+                                            (update ::i/queue #(cons resolve-with-did-interceptor %))))))))))
    ::i/leave (fn [{:keys [::i/response] :as ctx}]
                (let [{:keys [error did doc pds]} response]
                  (if error

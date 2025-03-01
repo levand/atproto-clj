@@ -1,5 +1,5 @@
 (ns atproto.json
-  "Cross platform JSON parser/serializer for the atproto client."
+  "Cross platform JSON parser/serializer."
   (:require #?(:clj [atproto.impl.jvm :as jvm])))
 
 (def interceptor

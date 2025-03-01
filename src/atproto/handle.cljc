@@ -1,5 +1,5 @@
 (ns atproto.handle
-  "Cross platform handle resolution for the atproto client.
+  "Cross platform handle resolution.
 
   Handles are human-friendly but less-permanent identifiers for atproto accounts.
 
@@ -63,6 +63,12 @@
                               (< 1 (count dids)) {:error "Too many DIDs found." :dids dids}
                               :else {:did (first dids)}))))))})
 
+(defn resolve-with-dns
+  [handle & {:as opts}]
+  (i/execute {::i/queue [resolve-with-dns-interceptor]
+              ::i/request {:handle handle}}
+             opts))
+
 (def resolve-with-https-interceptor
   "Resolve a handle using the https method."
   {::i/name ::resolve-with-https
@@ -82,6 +88,12 @@
                    (http/success? status) (assoc ctx ::i/response {:did (str/trim body)})
                    :else (assoc ctx ::i/response (http/error-map response)))))})
 
+(defn resolve-with-https
+  [handle & {:as opts}]
+  (i/execute {::i/queue [resolve-with-https-interceptor]
+              ::i/request {:handle handle}}
+             opts))
+
 ;; todo: find a way to parallelize
 (def resolve-interceptor
   {::i/name ::resolve
@@ -90,11 +102,18 @@
                      conformed-handle (conform handle)]
                  (if (= ::invalid conformed-handle)
                    (assoc ctx ::i/response {:error "Invalid handle." :handle handle})
-                   (let [new-ctx {::i/request {:handle conformed-handle}}]
-                     (i/execute (assoc new-ctx ::i/queue [resolve-with-dns-interceptor])
-                                :callback
-                                (fn [{:keys [error did] :as resp}]
-                                  (if error
-                                    (i/execute (assoc new-ctx ::i/queue [resolve-with-https-interceptor])
-                                               :callback #(i/continue (assoc ctx ::i/response %)))
-                                    (i/continue (assoc ctx ::i/response resp)))))))))})
+                   (resolve-with-dns conformed-handle
+                                     :callback
+                                     (fn [{:keys [error did] :as resp}]
+                                       (if error
+                                         (resolve-with-https conformed-handle
+                                                             :callback
+                                                             #(i/continue (assoc ctx ::i/response %)))
+                                         (i/continue (assoc ctx ::i/response resp))))))))})
+
+(defn resolve
+  "Resolve a conformed handle and return its DID."
+  [handle & {:as opts}]
+  (i/execute {::i/queue [resolve-interceptor]
+              ::i/request {:handle handle}}
+             opts))
