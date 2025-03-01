@@ -36,14 +36,16 @@
   [s]
   (not (= ::invalid (conform s))))
 
-(def resolve-dns-interceptor
-  {::i/name ::resolve-dns
+(def resolve-with-dns-interceptor
+  {::i/name ::resolve-with-dns
    ::i/enter (fn [{:keys [::i/request] :as ctx}]
                (let [{:keys [handle]} request
                      hostname (str "_atproto." handle)]
                  (if (< 253 (count hostname))
                    (assoc ctx ::i/response {:error "Handle Too Long"})
-                   (assoc ctx ::i/request {:hostname hostname :type "txt"}))))
+                   (-> ctx
+                       (assoc ::i/request {:hostname hostname :type "txt"})
+                       (update ::i/queue #(cons dns/interceptor %))))))
    ::i/leave (fn [{:keys [::i/response] :as ctx}]
                (let [{:keys [error values]} response]
                  (if error
@@ -61,22 +63,18 @@
                               (< 1 (count dids)) {:error "Too many DIDs found." :dids dids}
                               :else {:did (first dids)}))))))})
 
-(defn resolve-with-dns
-  "Resolve the handle and return its DID using the DNS method."
-  [handle & {:as opts}]
-  (i/execute {::i/queue [resolve-dns-interceptor
-                         dns/impl-interceptor]
-              ::i/request {:handle handle}}
-             opts))
-
-(def resolve-https-interceptor
+(def resolve-with-https-interceptor
   "Resolve a handle using the https method."
-  {::i/name ::resolve-https
+  {::i/name ::resolve-with-https
    ::i/enter (fn [{:keys [::i/request] :as ctx}]
                (let [{:keys [handle]} request]
-                 (assoc ctx ::i/request {:method :get
+                 (-> ctx
+                     (assoc ::i/request {:method :get
                                          :timeout 3000
-                                         :url (str "https://" handle "/.well-known/atproto-did")})))
+                                         :url (str "https://" handle "/.well-known/atproto-did")})
+                     (update ::i/queue #(into [json/interceptor
+                                               http/interceptor]
+                                              %)))))
    ::i/leave (fn [{:keys [::i/response] :as ctx}]
                (let [{:keys [error status body]} response]
                  (cond
@@ -84,22 +82,19 @@
                    (http/success? status) (assoc ctx ::i/response {:did (str/trim body)})
                    :else (assoc ctx ::i/response (http/error-map response)))))})
 
-(defn resolve-with-https
-  "Resolve the handle and return its DID using the HTTPS method."
-  [handle & {:as opts}]
-  (i/execute {::i/queue [resolve-https-interceptor
-                         http/impl-interceptor]
-              ::i/request {:handle handle}}
-             opts))
-
-;; todo: parallelize
-(defn resolve
-  "Resolve a handle and return its DID, or nil."
-  [handle & {:as opts}]
-  (let [[cb val] (i/platform-async opts)]
-    (resolve-with-dns handle
-                      :callback (fn [{:keys [error] :as resp}]
+;; todo: find a way to parallelize
+(def resolve-interceptor
+  {::i/name ::resolve
+   ::i/enter (fn [{:keys [::i/request] :as ctx}]
+               (let [{:keys [handle]} request
+                     conformed-handle (conform handle)]
+                 (if (= ::invalid conformed-handle)
+                   (assoc ctx ::i/response {:error "Invalid handle." :handle handle})
+                   (let [new-ctx {::i/request {:handle conformed-handle}}]
+                     (i/execute (assoc new-ctx ::i/queue [resolve-with-dns-interceptor])
+                                :callback
+                                (fn [{:keys [error did] :as resp}]
                                   (if error
-                                    (resolve-with-https handle :callback cb)
-                                    (cb resp))))
-    val))
+                                    (i/execute (assoc new-ctx ::i/queue [resolve-with-https-interceptor])
+                                               :callback #(i/continue (assoc ctx ::i/response %)))
+                                    (i/continue (assoc ctx ::i/response resp)))))))))})

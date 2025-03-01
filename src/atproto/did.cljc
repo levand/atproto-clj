@@ -112,38 +112,24 @@
   [s]
   (not (= ::invalid (conform s))))
 
-(def resolve-did-interceptor
-  {::i/name ::resolve-did
+(defmulti fetch-doc-interceptor
+  "The interceptor to fetch the DID document for this method."
+  :method)
+
+(def resolve-interceptor
+  {::i/name ::resolve
    ::i/enter (fn [{:keys [::i/request] :as ctx}]
                (let [conformed-did (conform (:did request))]
                  (if (= ::invalid conformed-did)
-                   (assoc ctx ::i/response {:error ::invalid})
-                   (update ctx ::i/request assoc :conformed-did conformed-did))))
+                   (assoc ctx ::i/response {:error "Invalid DID."})
+                   (let [interceptor (fetch-doc-interceptor conformed-did)]
+                     (update ctx ::i/queue #(cons interceptor %))))))
    ::i/leave (fn [{:keys [::i/response] :as ctx}]
-               (let [{:keys [did-doc error]} response]
+               (let [{:keys [doc error]} response]
                  (if error
                    ctx
                    ;; todo: validate doc in the response
                    ctx)))})
-
-(defmulti fetch-doc-interceptors
-  "A seq of interceptors to fetch the DID document for this method."
-  :method)
-
-(def fetch-doc-interceptor
-  {::i/name ::fetch-did-doc
-   ::i/enter (fn [{:keys [::i/request] :as ctx}]
-               (update ctx ::i/queue #(concat (fetch-doc-interceptors (:conformed-did request)) %)))
-   ::i/leave (fn [{:keys [::i/response] :as ctx}]
-               ctx)})
-
-(defn resolve
-  "Resolve the DID and return its document."
-  [did & {:as opts}]
-  (i/execute {::i/queue [resolve-did-interceptor
-                         fetch-doc-interceptor]
-              ::i/request {:did did}}
-             opts))
 
 ;; PLC method
 
@@ -155,23 +141,23 @@
     (and (= 24 (count msid))
          (every? base32-char? msid))))
 
-(def fetch-doc-plc-interceptor
+(defmethod fetch-doc-interceptor "plc"
+  [_]
   {::i/name ::fetch-doc-plc
    ::i/enter (fn [{:keys [::i/request] :as ctx}]
-               (assoc ctx ::i/request {:method :get
-                                       :url (str "https://plc.directory/" (:did request))}))
+               (let [{:keys [did]} request]
+                 (-> ctx
+                     (assoc ::i/request {:method :get
+                                         :url (str "https://plc.directory/" did)})
+                     (update ::i/queue #(into [json/interceptor
+                                               http/interceptor]
+                                              %)))))
    ::i/leave (fn [{:keys [::i/response] :as ctx}]
                (let [{:keys [error status body]} response]
                  (cond
                    error ctx
                    (http/success? status) (assoc ctx ::i/response {:doc body})
                    :else (assoc ctx ::i/response (http/error-map response)))))})
-
-(defmethod fetch-doc-interceptors "plc"
-  [_]
-  [fetch-doc-plc-interceptor
-   json/impl-interceptor
-   http/impl-interceptor])
 
 ;; Web method
 
@@ -212,13 +198,17 @@
      (or (str/starts-with? msid "localhost")
          (not (str/index-of msid "%3A"))))))
 
-(defmethod fetch-doc-interceptors "web"
+(defmethod fetch-doc-interceptor "web"
   [_]
-  :not-implemented)
+  {::i/name ::fetch-doc-plc
+   ::i/enter (fn [ctx]
+               (assoc ctx ::i/response {:error "Not Implemented"}))
+   ::i/leave (fn [{:keys [::i/response] :as ctx}]
+               ctx)})
 
 ;; DID document
 
-(defn doc->pds
+(defn pds
   "The atproto personal data server declared in this DID document."
   [doc]
   (some->> doc
@@ -228,3 +218,16 @@
                           (= "AtprotoPersonalDataServer" (:type service)))))
            (first)
            :serviceEndpoint))
+
+(defn handles
+  "The atproto handles defined in this document."
+  [doc]
+  (->> doc
+       :alsoKnownAs
+       (map #(second (re-matches #"^at://(.+)$" %)))
+       (remove nil?)))
+
+(defn also-known-as?
+  "Whether the handle is defined in the DID document."
+  [doc handle]
+  (= handle (first (handles doc))))

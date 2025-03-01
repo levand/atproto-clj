@@ -14,6 +14,6 @@
   {:error (str "HTTP " (:status resp))
    :http-response resp})
 
-(def impl-interceptor
+(def interceptor
   "Return implementation-specific HTTP interceptor."
   #?(:clj jvm/httpkit-interceptor))
