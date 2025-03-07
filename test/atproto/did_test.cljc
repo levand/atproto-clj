@@ -44,7 +44,6 @@
   (let [web-did->url {"did:web:example.com"      "https://example.com/"
                       "did:web:sub.example.com"  "https://sub.example.com/"
                       "did:web:localhost%3A8080" "http://localhost:8080/"}]
-    (doseq [[web-did url-str] web-did->url]
-      (let [url (java.net.URL. url-str)]
-        (is (= url (did/web-did->url web-did)) "The URL is correctly generated from the Web DID.")
-        (is (= web-did (did/url->web-did url)) "The Web DID is correctly generated from the URL.")))))
+    (doseq [[web-did url] web-did->url]
+      (is (= url (did/web-did->url web-did)) "The URL is correctly generated from the Web DID.")
+      (is (= web-did (did/url->web-did url)) "The Web DID is correctly generated from the URL."))))

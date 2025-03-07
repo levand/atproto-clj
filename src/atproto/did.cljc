@@ -13,8 +13,7 @@
             [clojure.spec.alpha :as s]
             [atproto.interceptor :as i]
             [atproto.http :as http]
-            [atproto.json :as json])
-  (:import [java.net URL MalformedURLException]))
+            [atproto.json :as json]))
 
 (defn- char-in
   "Whether the character is between start and end, both inclusive."
@@ -66,70 +65,61 @@
       ;; Otherwise invalid
       :else false)))
 
-(defn- parse-string-did
-  "Parse a DID string into a map with :scheme, :method, and :msid keys.
-
-  Return nil if the DID strign is not well formed."
-  [s]
-  (when-let [first-colon-idx (str/index-of s \:)]
-    (when-let [second-colon-idx (str/index-of s \: (inc first-colon-idx))]
-      {:scheme (subs s 0 first-colon-idx)
-       :method (subs s (inc first-colon-idx) second-colon-idx)
-       :msid (subs s (inc second-colon-idx))})))
-
-(s/def ::did
-  (s/and string?
-         (s/conformer #(or (parse-string-did %) ::s/invalid))
-         (s/keys :req-un [::scheme ::method ::msid])))
+(defn parse
+  "Parse the input into a DID map with :scheme, :method, and :msid."
+  [input]
+  (when-let [first-colon-idx (str/index-of input \:)]
+    (when-let [second-colon-idx (str/index-of input \: (inc first-colon-idx))]
+      {:scheme (subs input 0 first-colon-idx)
+       :method (subs input (inc first-colon-idx) second-colon-idx)
+       :msid (subs input (inc second-colon-idx))})))
 
 (s/def ::scheme #{"did"})
 (s/def ::method (s/and string? method?))
 (s/def ::msid (s/and string? msid?))
 
-(defmulti method-spec :method)
+(s/def ::did-map (s/keys :req-un [::scheme ::method ::msid]))
 
-(s/def ::at-proto-did
-  (s/and ::did
-         (s/multi-spec method-spec :method)))
+(s/def ::did (s/and string?
+                    (s/conformer #(or (parse %) ::s/invalid))
+                    ::did-map))
+
+(defmulti method-spec "Method-specific validation of the DID." :method)
+
+(s/def ::at-proto-did (s/and ::did
+                             (s/multi-spec method-spec :method)))
 
 (defn conform
-  "Conform the atproto DID string.
+  "Conform the input into a atproto DID string.
 
-  Return a map with 3 keys:
-  :scheme \"did\"
-  :method \"plc\" or \"web\"
-  :msid   method-specific identifier
-
-  Return :atproto.did/invalid if the DID is invalid."
-  [did]
-  (let [conformed-did (s/conform ::at-proto-did did)]
-    (if (= conformed-did ::s/invalid)
+  Return :atproto.did/invalid if the input is not a valid atproto DID string."
+  [input]
+  (let [atproto-did-map (s/conform ::at-proto-did input)]
+    (if (= atproto-did-map ::s/invalid)
       ::invalid
-      conformed-did)))
+      (let [{:keys [scheme method msid]} atproto-did-map]
+        (str scheme ":" method ":" msid)))))
 
 (defn valid?
-  "Whether the string is a valid atproto DID."
-  [s]
-  (not (= ::invalid (conform s))))
+  "Whether the input is a valid atproto DID string."
+  [input]
+  (not (= ::invalid (conform input))))
 
-(defmulti fetch-doc-interceptor
-  "The interceptor to fetch the DID document for this method."
-  :method)
+(defmulti fetch-doc
+  "Method-specific fetching of this DID's document."
+  (fn [did cb] (:method (parse did))))
 
-(def resolve-interceptor
-  {::i/name ::resolve
-   ::i/enter (fn [{:keys [::i/request] :as ctx}]
-               (let [conformed-did (conform (:did request))]
-                 (if (= ::invalid conformed-did)
-                   (assoc ctx ::i/response {:error "Invalid DID."})
-                   (let [interceptor (fetch-doc-interceptor conformed-did)]
-                     (update ctx ::i/queue #(cons interceptor %))))))
-   ::i/leave (fn [{:keys [::i/response] :as ctx}]
-               (let [{:keys [doc error]} response]
-                 (if error
-                   ctx
-                   ;; todo: validate doc in the response
-                   ctx)))})
+(defn resolve
+  "The DID document for this DID."
+  [input & {:as opts}]
+  (let [[cb val] (i/platform-async opts)]
+    (if (valid? input)
+      (fetch-doc input (fn [{:keys [error doc] :as resp}]
+                         (if error
+                           (cb resp)
+                           (cb {:did input :doc doc}))))
+      (cb {:error "The input is not a valid DID." :input input}))
+    val))
 
 ;; PLC method
 
@@ -141,84 +131,71 @@
     (and (= 24 (count msid))
          (every? base32-char? msid))))
 
-(defmethod fetch-doc-interceptor "plc"
-  [_]
-  {::i/name ::fetch-doc-plc
-   ::i/enter (fn [{:keys [::i/request] :as ctx}]
-               (let [{:keys [did]} request]
-                 (-> ctx
-                     (assoc ::i/request {:method :get
-                                         :url (str "https://plc.directory/" did)})
-                     (update ::i/queue #(into [json/interceptor
-                                               http/interceptor]
-                                              %)))))
-   ::i/leave (fn [{:keys [::i/response] :as ctx}]
-               (let [{:keys [error status body]} response]
-                 (cond
-                   error ctx
-                   (http/success? status) (assoc ctx ::i/response {:doc body})
-                   :else (assoc ctx ::i/response (http/error-map response)))))})
+(defmethod fetch-doc "plc"
+  [did cb]
+  (i/execute {::i/request {:method :get
+                           :url (str "https://plc.directory/" did)}
+              ::i/queue [json/interceptor http/interceptor]}
+             :callback
+             (fn [{:keys [error status body] :as resp}]
+               (cb (cond
+                     error                  resp
+                     (http/success? status) {:doc body}
+                     :else                  (http/error-map resp))))))
 
 ;; Web method
 
-(defn- ^URL web-did-msid->url
-  "Transform an atproto Web DID msid into a URL."
+(defn- web-did-msid->url
+  "Transform an atproto Web DID msid into a URL string."
   [msid]
   (let [hostname (str/replace msid "%3A" ":")
         scheme (if (str/starts-with? hostname "localhost")
                  "http"
                  "https")]
-    (try
-      (URL. (str scheme "://" hostname "/"))
-      (catch MalformedURLException _))))
+    (str scheme "://" hostname "/")))
 
 (defn web-did->url
-  "Transform an atproto Web DID into a URL."
+  "Transform an atproto Web DID into a URL string."
   [did]
   (when (valid? did)
-    (web-did-msid->url (:msid (conform did)))))
+    (web-did-msid->url (:msid (parse did)))))
 
 (defn url->web-did
-  "Take a DID URL and return the atproto DID web."
-  [^URL url]
-  (str "did:web:"
-       (.getHost url)
-       (when (not (= -1 (.getPort url)))
-         (str "%3A" (.getPort url)))))
+  "Take a DID URL string and return the atproto DID web."
+  [url]
+  (let [{:keys [host port]} (http/parse-url url)]
+    (str "did:web:" host (when port
+                           (str "%3A" port)))))
 
 (defmethod method-spec "web"
   [_]
-  (fn [{:keys [msid] :as conformed-did}]
+  (fn [{:keys [msid]}]
     (and
      ;; Ensure we can generate well formed URL from this DID
-     (some? (web-did-msid->url msid))
+     (s/valid? ::http/url (web-did-msid->url msid))
      ;; Atproto does not allow path components in Web DIDs
      (not (str/index-of msid \:))
      ;; Atproto does not allow port numbers in Web DIDs, except for localhost
      (or (str/starts-with? msid "localhost")
          (not (str/index-of msid "%3A"))))))
 
-(defmethod fetch-doc-interceptor "web"
-  [_]
-  {::i/name ::fetch-doc-plc
-   ::i/enter (fn [ctx]
-               (assoc ctx ::i/response {:error "Not Implemented"}))
-   ::i/leave (fn [{:keys [::i/response] :as ctx}]
-               ctx)})
+(defmethod fetch-doc "web"
+  [did cb]
+  (cb {:error "Not implemented"
+       :did did}))
 
 ;; DID document
 
-(defn ^URL pds
+(defn pds
   "The atproto personal data server declared in this DID document."
   [doc]
-  (when-let [url-str (some->> doc
-                              :service
-                              (filter (fn [service]
-                                        (and (str/ends-with? (:id service) "#atproto_pds")
-                                             (= "AtprotoPersonalDataServer" (:type service)))))
-                              (first)
-                              :serviceEndpoint)]
-    (URL. url-str)))
+  (some->> doc
+           :service
+           (filter (fn [service]
+                     (and (str/ends-with? (:id service) "#atproto_pds")
+                          (= "AtprotoPersonalDataServer" (:type service)))))
+           (first)
+           :serviceEndpoint))
 
 (defn handles
   "The atproto handles defined in this document."

@@ -12,7 +12,8 @@
   (:require [atproto.interceptor :as i]
             [clojure.string :as str]
             [atproto.json :as json]
-            [atproto.http :as http]))
+            [atproto.http :as http]
+            [atproto.oauth :as oauth]))
 
 (declare procedure)
 
@@ -131,7 +132,7 @@
                                    [xrpc-response]
                                    (:interceptors session)
                                    [(json/interceptor)
-                                    (http/interceptors)]))
+                                    (http/interceptor)]))
                  (assoc ::i/request request)
                  (dissoc ::i/response))
              opts))
@@ -208,7 +209,7 @@
     (i/execute {:endpoint endpoint
                 ::i/queue [interceptor
                            (json/interceptor)
-                           (http/interceptors)]}
+                           (http/interceptor)]}
                opts)))
 
 (defn pd-server

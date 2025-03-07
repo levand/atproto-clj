@@ -1,12 +1,15 @@
 (ns atproto.impl.jvm
   "JVM interceptor implementations"
-  (:require [clojure.core.async :as a]
+  (:require [clojure.string :as str]
+            [clojure.core.async :as a]
+            [clojure.spec.alpha :as s]
             [charred.api :as json]
             [atproto.interceptor :as i]
             [org.httpkit.client :as http])
   (:import [java.util Hashtable]
            [javax.naming.directory InitialDirContext]
-           [javax.naming NamingException]))
+           [javax.naming NamingException]
+           [java.net URL MalformedURLException]))
 
 (set! *warn-on-reflection* true)
 
@@ -54,7 +57,8 @@
                                                                     :exception error}))
                                    (i/continue (assoc ctx
                                                       ::i/response resp
-                                                      ::response resp)))))))})
+                                                      ::response resp)))))
+                 nil))})
 
 (defn- fetch-dns-record-values
   "Fetch DNS record values, blocking call."
@@ -82,4 +86,17 @@
                (let [ch (a/io-thread
                          (fetch-dns-record-values request))]
                  (a/go
-                   (i/continue (assoc ctx ::i/response (a/<! ch))))))})
+                   (i/continue (assoc ctx ::i/response (a/<! ch))))
+                 nil))})
+
+(defn parse-url
+  [input]
+  (try
+    (let [url (URL. input)]
+      (cond-> {:protocol (.getProtocol url)
+               :host (.getHost url)
+               :query-string (.getQuery url)
+               :fragment (.getRef url)}
+        (not (= -1 (.getPort url)))       (assoc :port (.getPort url))
+        (not (str/blank? (.getPath url))) (assoc :path (.getPath url))))
+    (catch MalformedURLException _ nil)))
