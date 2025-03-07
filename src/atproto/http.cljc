@@ -1,6 +1,7 @@
 (ns atproto.http
   "Cross-platform HTTP client."
   (:require [clojure.string :as str]
+            [clojure.spec.alpha :as s]
             #?(:clj [atproto.impl.jvm :as jvm])))
 
 (defn success?
@@ -13,6 +14,19 @@
   [resp]
   {:error (str "HTTP " (:status resp))
    :http-response resp})
+
+(def parse-url
+  "Return a map with the following keys:
+
+  <:protocol>://<:host>:<:port><:path>?<:query-string>#<:fragment>
+
+  Return nil if the URL is invalid."
+  #?(:clj jvm/parse-url))
+
+(s/def ::url
+  (s/conformer #(if (parse-url %)
+                  %
+                  ::s/invalid)))
 
 (def interceptor
   "Return implementation-specific HTTP interceptor."

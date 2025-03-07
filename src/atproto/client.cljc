@@ -130,8 +130,8 @@
                  (assoc ::i/queue (concat
                                    [xrpc-response]
                                    (:interceptors session)
-                                   [(json/interceptor)
-                                    (http/interceptors)]))
+                                   [json/interceptor
+                                    http/interceptor]))
                  (assoc ::i/request request)
                  (dissoc ::i/response))
              opts))
@@ -207,8 +207,8 @@
                                            (if error resp (:body resp)))))}]
     (i/execute {:endpoint endpoint
                 ::i/queue [interceptor
-                           (json/interceptor)
-                           (http/interceptors)]}
+                           json/interceptor
+                           http/interceptor]}
                opts)))
 
 (defn pd-server
