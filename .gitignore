@@ -25,3 +25,4 @@ resources/dev-config.edn
 src/atproto/scratch.clj
 
 dev/
+.env
