@@ -9,26 +9,13 @@ Multi-platform codebase designed to work in Clojure, ClojureScript and ClojureDa
 The workflow for utilizing the client is to:
 
 1. Obtain a session
-2. Use the session to make `query` or `procedure` calls to public atproto application endpoints or Personal Data Server.
+2. Use the session to instantiate a client
+2. Use the client to make `query` or `procedure` calls to public atproto application endpoints or Personal Data Server.
 
 The SDK supports three types of session:
 1. Unauthenticated sessions to make API calls to public atproto application endpoints like [Bluesky](https://docs.bsky.app/docs/category/http-reference).
 2. Credentials sessions to use with your own username/password for CLI tools.
 3. OAuth sessions to connect to your users' Personal Data Servers and make API calls on their behalf.
-
-#### Unauthenticated sessions
-
-```clojure
-```
-
-#### Credentials sessions
-
-```clojure
-```
-
-#### OAuth sessions
-
-TODO. You can check out the [statusphere example app](examples/statusphere).
 
 ### ATProto client
 
@@ -44,27 +31,35 @@ You can also provide a `:channel`, `:callback` or `:promise` keyword option to r
 
 
 ```clojure
-(require '[atproto.client :as at])
+(require '[atproto.session.unauthenticated :as unauthenticated-session]
+          [atproto.session.credentials :as credentials-session]
+          [atproto.client :as at])
 
-;; Unauthenticated client to atproto app
-(def session @(atproto.session.unauthenticated/create {:service "https://public.api.bsky.app"}))
-
-;; Credentials-based authentication session
-(def session @(atproto.session.credentials/create {:identifier "<me.bsky.social>" :password "SECRET"}))
+;; Unauthenticated session to atproto app
+(def session @(unauthenticated-session/create "https://public.api.bsky.app"))
 
 ;; Bluesky endpoints and their query params can be found here:
 ;; https://docs.bsky.app/docs/category/http-reference
+
+;; Credentials-based authentication session
+(def session @(credentials-session/create {:identifier "<me.bsky.social>"
+                                           :password "SECRET"}))
 
 ;; Create the client with the session
 (def client (at/client session)
 
 ;; Issue a query with the client
-@(at/query client :app.bsky.actor.getProfile {:actor "<me.bsky.social>"})
+@(at/query client {:op :app.bsky.actor.getProfile
+                   :params {:actor "<me.bsky.social>"}})
+
 ;; => {:handle "<me.bsky.social>" ... }
 
 ;; Using core.async
 (def result (async/chan))
-(at/query client :app.bsky.actor.getProfile {:actor "<me.bsky.social>"} :channel result)
+(at/query client
+          {:op :app.bsky.actor.getProfile
+           :params {:actor "<me.bsky.social>"}}
+          :channel result)
 (async/<!! result)
 ```
 

@@ -14,7 +14,7 @@
     handle (assoc ::session/handle handle)))
 
 (defn create
-  "Take a handle, did, or pds URL and return an unauthenticated session."
+  "Take a handle, did, or app URL and return an unauthenticated session."
   [input & {:as opts}]
   (let [[cb val] (i/platform-async opts)]
     (if (or (did/valid? input)
