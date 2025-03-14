@@ -11,24 +11,8 @@
   channel will be returned.)"
   (:require [atproto.interceptor :as i]
             [clojure.string :as str]
-            #?@(:cljd [] :default [[clojure.core.async :as a]])
-            #?(:clj [atproto.impl.jvm :as jvm])))
-
-(defn- success?
-  [code]
-  (and (number? code)
-    (<= 200 code 299)))
-
-(defn- http-error-map
-  "Given an unsuccessful HTTP response, convert to an error map"
-  [resp]
-  {:error (str "HTTP " (:status resp))
-   :http-response resp})
-
-(defn- impl-interceptors
-  "Return implementation-specific HTTP & content type interceptors"
-  []
-  #?(:clj [jvm/json-interceptor, jvm/httpkit-handler]))
+            [atproto.json :as json]
+            [atproto.http :as http]))
 
 (declare procedure)
 
@@ -37,30 +21,30 @@
   {::i/name ::auth-headers
    ::i/enter (fn enter-auth-headers [{:keys [auth refresh?] :as ctx}]
                (assoc-in ctx [::i/request :headers "Authorization"]
-                 (str "Bearer " (if refresh?
-                                  (:refreshJwt @auth)
-                                  (:accessJwt @auth)))))})
+                         (str "Bearer " (if refresh?
+                                          (:refreshJwt @auth)
+                                          (:accessJwt @auth)))))})
 
 (def refresh-token-interceptor
   "Interceptor that refreshes and retries expired tokens"
   {::i/name ::refresh-tokens
    ::i/leave (fn leave-refresh-tokens [{:keys [::i/response] :as ctx}]
                (if (and (= "ExpiredToken" (-> response :body :error))
-                     (not (:refresh? ctx)))
+                        (not (:refresh? ctx)))
                  (procedure (assoc ctx :refresh? true)
-                   :com.atproto.server.refreshSession
-                   {}
-                   :callback (fn [resp]
-                               (if (:error resp)
-                                 (i/continue
-                                   (assoc ctx ::i/response resp))
-                                 (do
-                                   (reset! (:auth ctx) resp)
-                                   (i/continue
-                                     (dissoc ctx
-                                       ::i/response
-                                       :refresh?)))))) ctx))})
-
+                            :com.atproto.server.refreshSession
+                            {}
+                            :callback (fn [resp]
+                                        (if (:error resp)
+                                          (i/continue
+                                           (assoc ctx ::i/response resp))
+                                          (do
+                                            (reset! (:auth ctx) resp)
+                                            (i/continue
+                                             (dissoc ctx
+                                                     ::i/response
+                                                     :refresh?))))))
+                 ctx))})
 
 (def xrpc-response
   "Response interceptor that extracts the content of an XRPC response into an
@@ -71,14 +55,14 @@
                  (:error response)
                  ctx
 
-                 (success? (:status response))
+                 (http/success? (:status response))
                  (assoc ctx ::i/response (:body response))
 
                  (:error (:body response))
                  (assoc ctx ::i/response (:body response))
 
                  :else
-                 (assoc ctx ::i/response (http-error-map response))))})
+                 (assoc ctx ::i/response (http/error-map response))))})
 
 (def default-public-endpoint "https://public.api.bsky.app")
 
@@ -87,15 +71,13 @@
 (def ^:private cfg-endpoint
   "Config interceptor that resolves an endpoint if not provided"
   {::i/name ::resolve-endpoint
-   ::i/enter (fn [{:keys [:endpoint :identifier] :as ctx}]
+   ::i/enter (fn [{:keys [endpoint identifier] :as ctx}]
                (if endpoint
                  ctx
                  (if identifier
-                   (pd-server identifier :callback
-                     #(i/continue
-                        (assoc ctx :endpoint %)))
+                   (pd-server identifier
+                              :callback #(i/continue (assoc ctx :endpoint %)))
                    (assoc ctx :endpoint default-public-endpoint))))})
-
 
 (def ^:private cfg-auth-password
   "Config interceptor that performs password-based authentication"
@@ -104,16 +86,16 @@
                (if-not password
                  ctx
                  (procedure ctx :com.atproto.server.createSession
-                   {:identifier identifier :password password}
-                   :callback
-                   (fn [resp]
-                     (if (:error resp)
-                       (i/continue (assoc ctx ::i/response resp))
-                       (i/continue (-> ctx
-                                     (assoc :auth (atom resp))
-                                     (update :interceptors concat
-                                       [auth-header-interceptor
-                                        refresh-token-interceptor]))))))))})
+                            {:identifier identifier :password password}
+                            :callback
+                            (fn [resp]
+                              (if (:error resp)
+                                (i/continue (assoc ctx ::i/response resp))
+                                (i/continue (-> ctx
+                                                (assoc :auth (atom resp))
+                                                (update :interceptors concat
+                                                        [auth-header-interceptor
+                                                         refresh-token-interceptor]))))))))})
 
 (def ^:private cfg-session
   "Config interceptor to clean up and return the current context as a session"
@@ -137,21 +119,22 @@
                           cfg-auth-password
                           cfg-session]]
     (i/execute (-> opts
-                 (assoc ::i/queue cfg-interceptors)
-                 (dissoc :promise :callback :channel))
-      (select-keys opts [:promise :callback :channel]))))
+                   (assoc ::i/queue cfg-interceptors)
+                   (dissoc :promise :callback :channel))
+               (select-keys opts [:promise :callback :channel]))))
 
 (defn- exec-xrpc
   "Given an XRPC request, execute it against the specified session."
   [session request & {:as opts}]
   (i/execute (-> session
-               (assoc ::i/queue (concat
-                                  [xrpc-response]
-                                  (:interceptors session)
-                                  (impl-interceptors)))
-               (assoc ::i/request request)
-               (dissoc ::i/response))
-    opts))
+                 (assoc ::i/queue (concat
+                                   [xrpc-response]
+                                   (:interceptors session)
+                                   [json/interceptor
+                                    http/interceptor]))
+                 (assoc ::i/request request)
+                 (dissoc ::i/response))
+             opts))
 
 (defn- url
   "Construct a URL given a session and a NSID"
@@ -161,10 +144,12 @@
 (defn query
   "Query using the provided NSID and parameters."
   [session nsid parameters & {:keys [headers] :as opts}]
-  (exec-xrpc session {:url (url session nsid)
-                      :method :get
-                      :query-params parameters
-                      :headers headers} opts))
+  (exec-xrpc session
+             {:url (url session nsid)
+              :method :get
+              :query-params parameters
+              :headers headers}
+             opts))
 
 (defn procedure
   "Execute a procedure using the provided NSID and input.
@@ -184,45 +169,58 @@
                                 :method :post}
                          body (assoc :body body)
                          headers (assoc :headers headers))
-      opts)))
+               opts)))
 
 (defn resolve-handle
   "Resolve the given handle to a DID."
   [handle & {:keys [endpoint] :as opts
              :or {endpoint default-public-endpoint}}]
-  (query {:endpoint endpoint} :com.atproto.identity.resolveHandle
-    {:handle handle}
-    opts))
+  (query {:endpoint endpoint}
+         :com.atproto.identity.resolveHandle
+         {:handle handle}
+         opts))
 
 (defn id-doc
   "Retrieve the identity document for a handle or DID"
   [handle-or-did & {:keys [endpoint]
                     :as opts
                     :or {endpoint default-public-endpoint}}]
-  (let [req (fn [did] {:method :get
-                       :url (str "https://plc.directory/" did)})
-        interceptor {::i/enter (fn [ctx]
+  (let [req (fn [did]
+              {:method :get
+               :url (str "https://plc.directory/" did)})
+        interceptor {::i/name ::resolve-did
+                     ::i/enter (fn [ctx]
                                  (if (str/starts-with? handle-or-did "did:")
                                    (assoc ctx ::i/request (req handle-or-did))
-                                   (resolve-handle handle-or-did :callback
-                                     (fn [{:keys [:did]}]
-                                       (i/continue (assoc ctx ::i/request
-                                                     (req did)))))))
+                                   (resolve-handle handle-or-did
+                                                   :callback (fn [{:keys [error did] :as resp}]
+                                                               (if error
+                                                                 (i/continue (assoc ctx
+                                                                                    ::i/response
+                                                                                    resp))
+                                                                 (i/continue (assoc ctx
+                                                                                    ::i/request
+                                                                                    (req did))))))))
                      ::i/leave (fn [ctx]
-                                 (update ctx ::i/response :body))}]
+                                 (update ctx ::i/response
+                                         (fn [{:keys [error] :as resp}]
+                                           (if error resp (:body resp)))))}]
     (i/execute {:endpoint endpoint
-                ::i/queue (cons interceptor (impl-interceptors))}
-      opts)))
+                ::i/queue [interceptor
+                           json/interceptor
+                           http/interceptor]}
+               opts)))
 
 (defn pd-server
   [handle-or-did & {:as opts}]
   (let [[cb val] (i/platform-async opts)]
-    (id-doc handle-or-did :endpoint (:endpoint opts)
-      :callback (fn [id-doc]
-                  (cb (->> (:service id-doc)
-                        (filter #(= (:type %) "AtprotoPersonalDataServer"))
-                        (first)
-                        (:serviceEndpoint)))))
+    (id-doc handle-or-did
+            :endpoint (:endpoint opts)
+            :callback (fn [id-doc]
+                        (cb (->> (:service id-doc)
+                                 (filter #(= (:type %) "AtprotoPersonalDataServer"))
+                                 (first)
+                                 (:serviceEndpoint)))))
     val))
 
 
