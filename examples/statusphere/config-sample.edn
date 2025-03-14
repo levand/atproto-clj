@@ -1,0 +1,8 @@
+{
+ ;; The port the server will listen on
+ :port 8080
+
+ ;; Secret to encrypt the cookies
+ ;; Can be generated with `openssl rand -base64 16`
+ ;; Ring requires the secret to be exactly 16 bytes.
+ :cookie-secret ""}
