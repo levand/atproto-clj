@@ -73,12 +73,12 @@
                      :else                  (http/error-map resp))))))
 
 (defn resolve
-  "Resolve the handle and return a map with the DID."
+  "Resolve the handle to a DID."
   [input & {:as opts}]
   (let [[cb val] (i/platform-async opts)
         handle (conform input)]
     (if (= ::invalid handle)
-      (cb {:error "The input is not a valid handle." :input input})
+      (cb {:error (str "Cannot resolve invalid handle: " input)})
       (resolve-with-dns handle
                         (fn [{:keys [error] :as resp}]
                           (if error

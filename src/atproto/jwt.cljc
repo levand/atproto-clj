@@ -2,14 +2,6 @@
   "Cross platform JSON Web Token."
   (:require #?(:clj [atproto.impl.jvm :as jvm])))
 
-(def generate-jwk
-  "Generate a JSON Web Key for digital signatures."
-  #?(:clj jvm/generate-jwk))
-
-(def parse-jwks
-  "Parse a JSON Web Keyset from a JSON-serialized string."
-  #?(:clj jvm/parse-jwks))
-
 (def public-jwks
   "Return a JSON Web Keyset with only the public keys."
   #?(:clj jvm/public-jwks))
@@ -22,6 +14,10 @@
   :kid   a key identifier"
   #?(:clj jvm/query-jwks))
 
+(def generate-jwk
+  "Generate a JSON Web Key for digital signatures."
+  #?(:clj jvm/generate-jwk))
+
 (def public-jwk
   "The public JWK for this private JWK."
   #?(:clj jvm/public-jwk))
@@ -31,5 +27,5 @@
   #?(:clj jvm/jwk-kid))
 
 (def generate
-  "Generate a JSON Web token and sign it with the given key."
+  "Base64url-encoded serialization of the JSON Web token signed with the given key."
   #?(:clj jvm/generate-jwt))

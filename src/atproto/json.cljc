@@ -1,12 +1,38 @@
 (ns atproto.json
   "Cross platform JSON parser/serializer."
-  (:require #?(:clj [atproto.impl.jvm :as jvm])))
+  (:require [clojure.string :as str]
+            [atproto.interceptor :as i]
+            #?(:clj [charred.api :as json])))
+
+(defn- json-content-type?
+  "Test if a request or response should be interpreted as json"
+  [req-or-resp]
+  (when-let [ct (:content-type (:headers req-or-resp))]
+    (or (str/starts-with? ct "application/json")
+        (str/starts-with? ct "application/did+ld+json"))))
 
 (def read-str
-  #?(:clj jvm/json-read-str))
+  #?(:clj #(json/read-json % :key-fn keyword)))
 
 (def write-str
-  #?(:clj jvm/json-write-str))
+  #?(:clj #(json/write-json-str %)))
 
 (def interceptor
-  #?(:clj jvm/json-interceptor))
+  "Interceptor for JSON request and response bodies"
+  {::i/name ::interceptor
+   ::i/enter (fn [ctx]
+               (update ctx
+                       ::i/request
+                       (fn [{:keys [headers body] :as request}]
+                         (if body
+                           (let [request (if (not (:content-type (:headers request)))
+                                           (assoc-in request  [:headers :content-type] "application/json")
+                                           request)]
+                             (if (json-content-type? request)
+                               (update request :body write-str)
+                               request))
+                           request))))
+   ::i/leave (fn leave-json [{:keys [::i/response] :as ctx}]
+               (if (json-content-type? response)
+                 (update-in ctx [::i/response :body] read-str)
+                 ctx))})

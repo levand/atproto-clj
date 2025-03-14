@@ -4,16 +4,19 @@
             [clojure.core.async :as a]
             [clojure.spec.alpha :as s]
             [clojure.java.io :as io]
+            [clojure.walk :refer [stringify-keys keywordize-keys]]
             [charred.api :as json]
             [atproto.interceptor :as i]
             [org.httpkit.client :as http])
-  (:import [java.util Set Hashtable UUID Base64 Date]
+  (:import [java.util Map Set Hashtable]
            [java.net URLEncoder URLDecoder]
            [javax.naming.directory InitialDirContext]
            [javax.naming NamingException]
            [java.net URL MalformedURLException]
            [java.nio.charset StandardCharsets]
            [java.security SecureRandom MessageDigest]
+           [java.time Instant]
+           [java.time.temporal ChronoUnit]
            [com.nimbusds.jose.util Base64URL]
            [com.nimbusds.jwt JWTClaimsSet$Builder SignedJWT]
            [com.nimbusds.jose Algorithm JWSAlgorithm JWSHeader$Builder JOSEObjectType JWSSigner]
@@ -22,36 +25,6 @@
            [com.nimbusds.jose.crypto.factories DefaultJWSSignerFactory]))
 
 (set! *warn-on-reflection* true)
-
-(defn- json-content-type?
-  "Test if a request or response should be interpreted as json"
-  [req-or-resp]
-  (when-let [^String ct (:content-type (:headers req-or-resp))]
-    (or (.startsWith ct "application/json")
-        (.startsWith ct "application/did+ld+json"))))
-
-(def json-read-str  #(json/read-json % :key-fn keyword))
-(def json-write-str #(json/write-json-str %))
-
-(def json-interceptor
-  "Interceptor for JSON request and response bodies"
-  {::i/name ::json
-   ::i/enter (fn enter-json [ctx]
-               (update ctx
-                       ::i/request
-                       (fn [{:keys [headers body] :as request}]
-                         (if body
-                           (let [request (if (not (:content-type (:headers request)))
-                                           (assoc-in request  [:headers :content-type] "application/json")
-                                           request)]
-                             (if (json-content-type? request)
-                               (update request :body json-write-str)
-                               request))
-                           request))))
-   ::i/leave (fn leave-json [{:keys [::i/response] :as ctx}]
-               (if (json-content-type? response)
-                 (update-in ctx [::i/response :body] json-read-str)
-                 ctx))})
 
 (defn- normalize-headers
   "Convert keyword keys to strings for a header"
@@ -149,7 +122,7 @@
   [^byte/1 bytes]
   (str (Base64URL/encode bytes)))
 
-;; Java Web token
+;; Java Web Token
 
 (defn- ^JWKGenerator jwk-generator
   "Return a KeyPair Generator for the given key type and options."
@@ -162,6 +135,12 @@
       "OKP" (OctetKeyPairGenerator. curve)
       nil)))
 
+(defn jwks->clj [^JWKSet jwks] (->> jwks (.toJSONObject) (into {}) keywordize-keys))
+(defn ^JWKSet clj->jwks [m] (JWKSet/parse ^Map (stringify-keys m)))
+
+(defn jwk->clj  [^JWK jwk] (->> jwk (.toJSONObject) (into {}) keywordize-keys))
+(defn ^JWK clj->jwk  [m] (JWK/parse ^Map (stringify-keys m)))
+
 (defn generate-jwk
   [{:keys [^String alg ^String kid] :as opts}]
   (when-let [kty (KeyType/forAlgorithm (JWSAlgorithm/parse alg))]
@@ -169,15 +148,14 @@
       (-> generator
           (.keyUse KeyUse/SIGNATURE)
           (.keyID kid)
-          (.generate)))))
-
-(defn parse-jwks
-  [^String s]
-  (JWKSet/parse s))
+          (.generate)
+          (jwk->clj)))))
 
 (defn public-jwks
-  [^JWKSet jwks]
-  (.toPublicJWKSet jwks))
+  [^Map jwks]
+  (->> (clj->jwks jwks)
+       (.toPublicJWKSet)
+       (jwks->clj)))
 
 (defn- query->jwk-matcher
   [{:keys [^String alg ^String kid]}]
@@ -195,20 +173,23 @@
           (.build)))))
 
 (defn query-jwks
-  [^JWKSet jwks query]
-  (.select (JWKSelector. (query->jwk-matcher query))
-           jwks))
+  [^Map jwks query]
+  (->> (clj->jwks jwks)
+       (.select (JWKSelector. (query->jwk-matcher query)))
+       (map jwk->clj)))
 
 (defn jwk-kid
-  [^JWK jwk]
-  (.getKeyID jwk))
+  [^Map jwk]
+  (.getKeyID (clj->jwk jwk)))
 
 (defn public-jwk
-  [^JWK jwk]
-  (.toPublicJWK jwk))
+  [^Map jwk]
+  (-> (clj->jwk jwk)
+      (.toPublicJWK)
+      (jwk->clj)))
 
 (defn generate-jwt
-  [^JWK jwk {:keys [^String alg] :as headers} claims]
+  [^Map jwk {:keys [^String alg] :as headers} claims]
   (let [header (->> headers
                     ^JWSHeader$Builder
                     (reduce (fn [^JWSHeader$Builder builder [k v]]
@@ -216,7 +197,7 @@
                                 :alg builder
                                 :kid (.keyID builder v)
                                 :typ (.type builder (JOSEObjectType. v))
-                                :jwk (.jwk builder v)
+                                :jwk (.jwk builder (clj->jwk v))
                                 (.customParam builder (name k) v)))
                             (JWSHeader$Builder. (JWSAlgorithm/parse alg)))
                     (.build))
@@ -227,6 +208,7 @@
                              (JWTClaimsSet$Builder.))
                      (.build))
         jwt (SignedJWT. header payload)
-        signer (.createJWSSigner (DefaultJWSSignerFactory.) jwk)]
+        signer (.createJWSSigner (DefaultJWSSignerFactory.)
+                                 (clj->jwk jwk))]
     (.sign jwt signer)
     (.serialize jwt)))

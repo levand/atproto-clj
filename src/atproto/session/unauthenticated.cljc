@@ -20,6 +20,7 @@
     (if (or (did/valid? input)
             (handle/valid? input))
       (identity/resolve input
+                        :callback
                         (fn [{:keys [error pds did handle] :as resp}]
                           (cb (if error resp (unauthenticated-session {:service pds
                                                                        :did did

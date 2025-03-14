@@ -9,7 +9,8 @@
             [atproto.crypto :as crypto]
             [atproto.jwt :as jwt]
             [atproto.identity :as identity]
-            [atproto.session :as session]))
+            [atproto.session :as session]
+            [atproto.session.oauth.store :as store]))
 
 ;; atproto clients and servers must support ES256
 (def default-alg "ES256")
@@ -35,6 +36,7 @@
 (defn- generate-dpop-key []
   (jwt/generate-jwk {:alg default-alg}))
 
+;; todo: where to store this? 1 per origin?
 ;; host -> nonce
 (def nonce-store (atom {}))
 
@@ -99,54 +101,27 @@
 
 ;; todo:
 ;; - ensure we have a ES256-compatible private key in the keyset
-;; - make session store pluggable
 (defn client
   "Initialize the OAuth client."
-  [{:keys [client-metadata keys] :as opts}]
-  (let [jwks (jwt/parse-jwks
-              (json/write-str
-               {:keys (->> keys
-                           (filter string?)
-                           (map json/read-str))}))]
+  [{:keys [client-metadata keys state-store session-store] :as opts}]
+  (let [jwks {"keys" (->> keys
+                          (filter string?)
+                          (map json/read-str))}]
     {:client-metadata (assoc client-metadata
                              ;; only add the public keys to the client metadata
-                             :jwks (json/read-str (str (jwt/public-jwks jwks))))
-     ;; private keys
+                             :jwks (jwt/public-jwks jwks))
      :jwks jwks
-     ;; map iss -> authorization-server-metadata
      :issuers (atom {})
-     ;; short-term state store for oauth authorization
-     :state-store (atom {})
-     ;; longer-term oauth session store
-     :sessions (atom {})}))
+     :state-store (or state-store (store/memory-store))
+     :session-store (or session-store (store/memory-store))}))
 
-(defn set-issuer!
+(defn- set-issuer!
   [client iss metadata]
   (swap! (:issuers client) assoc iss metadata))
 
-(defn get-issuer
+(defn- get-issuer
   [client iss]
   (get @(:issuers client) iss))
-
-(defn get-state
-  [client state-key]
-  (get @(:state-store client) state-key))
-
-(defn set-state!
-  [client state-key state]
-  (swap! (:state-store client) assoc state-key state))
-
-(defn delete-state!
-  [client state-key]
-  (swap! (:state-store client) dissoc state-key))
-
-(defn set-session!
-  [client did session]
-  (swap! (:sessions client) assoc did session))
-
-(defn get-session
-  [client did]
-  (get @(:sessions client) did))
 
 ;; Resolve identity
 
@@ -208,6 +183,7 @@
   :iss       The issuer's URL."
   [client input cb]
   (identity/resolve input
+                    :callback
                     (fn [{:keys [error] :as resp}]
                       (if error
                         (cb resp)
@@ -242,7 +218,7 @@
                                       :jti (crypto/generate-nonce 16)
                                       :iat (crypto/now)})}))
 
-(defn par-interceptor
+(defn- par-interceptor
   "Interceptor for this client to send the push authorization request (PAR) to this issuer."
   [{:keys [client-metadata] :as client}
    {:keys [issuer dpop-key] :as server}]
@@ -265,11 +241,13 @@
                                                        :response_type "code"
                                                        :scope (or (:scope opts) scope)}
                                                 identity (assoc :login_hint input))]
-                             (set-state! client state {:iss (:issuer issuer)
-                                                       :dpop-key dpop-key
-                                                       :identity identity
-                                                       :verifier (:verifier pkce)
-                                                       :app-state (:state opts)})
+                             (store/set (:state-store client)
+                                        state
+                                        {:iss (:issuer issuer)
+                                         :dpop-key dpop-key
+                                         :identity identity
+                                         :verifier (:verifier pkce)
+                                         :app-state (:state opts)})
                              {:method :post
                               :url pushed_authorization_request_endpoint
                               :body (merge oauth-params
@@ -326,7 +304,7 @@
                                 :callback cb))))))
     val))
 
-(defn exchange-code
+(defn- exchange-code
   "Exchange an authorization code for a set of tokens."
   [client server {:keys [code verifier]} cb]
   (let [{:keys [client_id redirect_uris]} (:client-metadata client)
@@ -371,16 +349,24 @@
   :issuer   The issuer for this request.
   :error    In case of an error."
   [client {:keys [response iss state error code] :as params}]
-  (if-let [saved-state (get-state client state)]
-    (do
-      (delete-state! client state)
-      (if error
-        {:error error :params params :state saved-state}
-        (if (not (= iss (:iss saved-state)))
-          {:error "Issuer mismatch." :params params :state saved-state}
-          {:state saved-state
-           :issuer (get-issuer client iss)})))
-    {:error "Unknown state" :state state}))
+  (let [saved-state (store/get (:state-store client) state)]
+    (if (not saved-state)
+      {:error "Unknown state" :state state}
+      (do
+        (store/del (:state-store client) state)
+        (cond error
+              {:error error
+               :params params
+               :state saved-state}
+
+              (not (= iss (:iss saved-state)))
+              {:error "Issuer mismatch."
+               :params params
+               :state saved-state}
+
+              :else
+              {:state saved-state
+               :issuer (get-issuer client iss)})))))
 
 (defn callback
   "Exchange the authorization code for OAuth tokens and return a OAuth session.
@@ -396,10 +382,8 @@
       (let [{:keys [verifier dpop-key app-state identity]} state
             server {:issuer issuer
                     :dpop-key dpop-key}]
-        (exchange-code client
-                       server
-                       {:code (:code params)
-                        :verifier verifier}
+        (exchange-code client server {:code (:code params)
+                                      :verifier verifier}
                        (fn [{:keys [error] :as resp}]
                          (if error
                            (cb resp)
@@ -408,16 +392,19 @@
                                                 {:did did
                                                  :tokens resp
                                                  :dpop-key dpop-key})]
-                             (set-session! client did session)
+                             (store/set (:session-store client) did session)
                              (cb (cond-> {:session (oauth-session client session)}
                                    app-state (assoc :state app-state)))))))))
+
     val))
 
 (defn restore
-  "The OAuth session for this did."
+  "The OAuth session for this did, or nil."
   [client did & {:as opts}]
-  (let [data (get-session client did)]
-    (oauth-session client data)))
+  (let [[cb val] (i/platform-async opts)]
+    (when-let [session-data (store/get (:session-store client) did)]
+      (cb (oauth-session client session-data)))
+    val))
 
 ;; todo
 (defn refresh-session

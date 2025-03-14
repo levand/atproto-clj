@@ -2,37 +2,37 @@
 
 Work very much in progress
 
-Multi-platform codebase designed to work in Clojure, ClojureScript and
-ClojureDart.
-
-## Progress
-
-| Feature      | Status |
-| ------------ | ------ |
-| http client  | 🟡     |
-| identifiers  | 🔴     |
-| bsky         | 🔴     |
-| crypto       | 🔴     |
-| mst          | 🔴     |
-| lexicon      | 🔴     |
-| identity     | 🔴     |
-| streaming    | 🟡     |
-| service auth | 🔴     |
-| plc          | 🔴     |
-| oauth server | 🔴     |
+Multi-platform codebase designed to work in Clojure, ClojureScript and ClojureDart.
 
 ## Usage
 
-### ATProto client
-
 The workflow for utilizing the client is to:
 
-1. Obtain a session by specifying the ATProto endpoint and (optionally) authentication credentials.
-2. Use the session to make `query` or `procedure` calls to [ATProto](https://atproto.com/specs/xrpc#lexicon-http-endpoints) or [Bluesky](https://docs.bsky.app/docs/category/http-reference) endpoints.
+1. Obtain a session
+2. Use the session to make `query` or `procedure` calls to public atproto application endpoints or Personal Data Server.
 
-A session is a thread-safe, stateful object containing the information required to make ATProto HTTP requests.
+The SDK supports three types of session:
+1. Unauthenticated sessions to make API calls to public atproto application endpoints like [Bluesky](https://docs.bsky.app/docs/category/http-reference).
+2. Credentials sessions to use with your own username/password for CLI tools.
+3. OAuth sessions to connect to your users' Personal Data Servers and make API calls on their behalf.
 
-`query` and `procedure` calls use the "NSID" of the query or procedure, and a Clojure map of parameters/input.
+#### Unauthenticated sessions
+
+```clojure
+```
+
+#### Credentials sessions
+
+```clojure
+```
+
+#### OAuth sessions
+
+TODO. You can check out the [statusphere example app](examples/statusphere).
+
+### ATProto client
+
+`query` and `procedure` calls use the "NSID" of the query or procedure, and a Clojure map of parameters.
 
 All calls (including the call to `init`) are asynchronous, and return immediately. The return value depends on platform:
 
@@ -46,29 +46,25 @@ You can also provide a `:channel`, `:callback` or `:promise` keyword option to r
 ```clojure
 (require '[atproto.client :as at])
 
-;; Unauthenticated client to default endpoint
-(def session @(at/init))
+;; Unauthenticated client to atproto app
+(def session @(atproto.session.unauthenticated/create {:service "https://public.api.bsky.app"}))
 
-;; Unauthenticated client to a particular server
-(def session @(at/init :endpoint "https://public.api.bsky.app"))
-
-;; Password-based authenticated client
-;; Defaults to looking up and using the identifier's PD server
-(def session @(at/init :identifier "me.bsky.social"
-                      :password "SECRET"))
+;; Credentials-based authentication session
+(def session @(atproto.session.credentials/create {:identifier "<me.bsky.social>" :password "SECRET"}))
 
 ;; Bluesky endpoints and their query params can be found here:
 ;; https://docs.bsky.app/docs/category/http-reference
 
-@(at/query session :app.bsky.actor.getProfile {:actor "gosha.net"})
-;; => {:handle "gosha.net",
-;;     :displayName "Gosha ⚡",
-;;     :did "did:plc:ypjjs7u7owjb7xmueb2iw37u",
-;;     ......}
+;; Create the client with the session
+(def client (at/client session)
+
+;; Issue a query with the client
+@(at/query client :app.bsky.actor.getProfile {:actor "<me.bsky.social>"})
+;; => {:handle "<me.bsky.social>" ... }
 
 ;; Using core.async
 (def result (async/chan))
-(at/query session :app.bsky.actor.getProfile {:actor "gosha.net"} :channel result)
+(at/query client :app.bsky.actor.getProfile {:actor "<me.bsky.social>"} :channel result)
 (async/<!! result)
 ```
 

@@ -17,7 +17,7 @@ pom.xml.asc
 /.lein-*
 /.nrepl-port
 /.prepl-port
-/.cpcache
+/.cpcache*
 
 /samples
 
@@ -25,4 +25,5 @@ resources/dev-config.edn
 src/atproto/scratch.clj
 
 dev/
-.env
+config.edn
+*.db

@@ -11,12 +11,21 @@
   channel will be returned.)"
   (:require [clojure.string :as str]
             [atproto.interceptor :as i]
-            [atproto.xrpc :as xrpc]))
+            [atproto.identity :as identity]
+            [atproto.xrpc :as xrpc]
+            [atproto.session :as session]))
 
 (defn client
   "Create a new client for the given session."
   [session]
   {:session session})
+
+(defn did
+  "The did of the authenticated user, or nil."
+  [client]
+  (let [{:keys [session]} client]
+    (and (::session/authenticated? session)
+         (::session/did session))))
 
 (defn procedure
   [client args & {:as opts}]

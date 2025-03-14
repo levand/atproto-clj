@@ -117,13 +117,14 @@
       (fetch-doc input (fn [{:keys [error doc] :as resp}]
                          (if error
                            (cb resp)
-                           (cb {:did input :doc doc}))))
-      (cb {:error "The input is not a valid DID." :input input}))
+                           (cb {:did input
+                                :doc doc}))))
+      (cb {:error (str "Cannot resolve invalid DID: " input)}))
     val))
 
 ;; PLC method
 
-(defn base32-char? [c] (or (char-in c \a \z) (char-in c \2 \7)))
+(defn- base32-char? [c] (or (char-in c \a \z) (char-in c \2 \7)))
 
 (defmethod method-spec "plc"
   [_]
