@@ -119,7 +119,6 @@
                             (do (log/warn "Unknown command:" cmd)  (recur))
                             (do
                               (log/info "Shutdown command recieved")
-                              (a/close! ch)
                               (a/close! listener-ch)
                               (.sendClose socket WebSocket/NORMAL_CLOSURE "complete")
                               (.abort socket))))
