@@ -41,6 +41,7 @@
 
   Errors are represented as response objects with an `:error` key indicating
   the error type, and a `:message` key with a human-readable error message."
+  (:refer-clojure :exclude [identity])
   (:require #?@(:cljd [] :default [[clojure.core.async :as a]])))
 
 (declare continue)
@@ -57,16 +58,15 @@
           (if (and ret (not (and (map? ret)
                                  (or (contains? ret ::queue)
                                      (contains? ret ::stack)))))
-            (do
-              (tap> {:msg "invalid-interceptor-context"})
-              {::request ::missing
-               ::response {:error "Invalid Interceptor Context"
-                           :message (str "Phase " phase " of " (::name i)
-                                         " returned a non-context value.")
-                           :return-value ret}})
+            {::request ::missing
+             ::response {:error "Invalid Interceptor Context"
+                         :message (str "Phase " phase " of " (::name i)
+                                       " returned a non-context value.")
+                         :return-value ret}}
             ret))))
     #?(:clj (catch Throwable t
-              (tap> {:msg (.getMessage t)})
+              (tap> {:msg (.getMessage t)
+                     :exception (Throwable->map t)})
               (assoc ctx ::response
                      {:error (.getName (.getClass t))
                       :message (.getMessage t)
@@ -76,24 +76,22 @@
 
 (defn- leave
   "Execute the leave phase of an interceptor context."
-  [{:keys [::name ::queue ::stack] :as ctx}]
+  [{:keys [::queue ::stack ::request ::response] :as ctx}]
   (if (empty? stack)
     ctx
     (let [current (first stack)]
-      (tap> {:msg (str "leave " (::name current))})
       (let [ctx' (assoc ctx ::stack (rest stack) ::queue (cons current queue))
             ctx'' (try-invoke current ::leave ctx')]
         (when ctx'' (continue ctx''))))))
 
 (defn- enter
   "Execute the enter phase of an interceptor context."
-  [{:keys [::queue ::stack] :as ctx}]
+  [{:keys [::queue ::stack ::request ::response] :as ctx}]
   (if (empty? queue)
     (leave (assoc ctx ::response
                   {:error "NoResponseInterceptor"
                    :message "No interceptor returned a response"}))
     (let [current (first queue)]
-      (tap> {:msg (str "enter " (::name current))})
       (let [ctx' (assoc ctx ::stack (cons current stack) ::queue (rest queue))
             ctx'' (try-invoke current ::enter ctx')]
         (when ctx''
@@ -166,12 +164,12 @@
   (let [opts (select-keys opts [:channel :callback :promise])
         [cb val] (platform-async opts)
         final {::name ::execute
-               ::leave (fn [ctx]
-                         (try
-                           (cb (response ctx))
-                           (catch Throwable t
-                             (tap> {:msg (.getMessage t)})))
-                         nil)}
+               ::leave #(try
+                          (cb (response %))
+                          #?(:clj (catch Throwable t
+                                    (tap> {:error "Uncaught error in callback."
+                                           :msg (.getMessage t)
+                                           :exception (Throwable->map t)}))))}
         ctx (update ctx ::queue #(cons final %))]
     (enter ctx)
     val))
