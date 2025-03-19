@@ -1,7 +1,5 @@
 (ns atproto.handle
-  "Cross platform handle resolution.
-
-  Handles are human-friendly but less-permanent identifiers for atproto accounts.
+  "Handles are human-friendly but less-permanent identifiers for atproto accounts.
 
   See https://atproto.com/specs/handle."
   (:refer-clojure :exclude [resolve])

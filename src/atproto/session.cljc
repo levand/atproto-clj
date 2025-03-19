@@ -14,7 +14,7 @@
 (s/def ::service ::http/url)
 
 ;; The DID of the authenticated user.
-(s/def ::did ::did/did)
+(s/def ::did ::did/at-did)
 
 ;; The handle of the authenticated user, if any.
 (s/def ::handle ::handle/handle)

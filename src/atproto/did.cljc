@@ -1,7 +1,5 @@
 (ns atproto.did
-  "Cross platform DID resolver.
-
-  Decentralized identifiers (DIDs) are persistent, long-term identifiers for atproto accounts.
+  "Decentralized identifiers (DIDs) are persistent, long-term identifiers for atproto accounts.
 
   DID = \"did:<method>:<method-specific-identifier>\"
 
@@ -13,24 +11,30 @@
             [clojure.spec.alpha :as s]
             [atproto.interceptor :as i]
             [atproto.http :as http]
-            [atproto.json :as json]))
+            [atproto.json :as json]
+            [atproto.did :as-alias did]))
 
-(defn- char-in
-  "Whether the character is between start and end, both inclusive."
-  [c start end]
-  (<= (int start) (int c) (int end)))
+;; Helpers
 
+(defn- char-in [c start end] (<= (int start) (int c) (int end)))
 (defn- digit? [c] (char-in c \0 \9))
 (defn- hex-char? [c] (or (digit? c) (char-in c \A \F)))
 (defn- method-char? [c] (or (digit? c) (char-in c \a \z)))
+(defn- base32-char? [c] (or (char-in c \a \z) (char-in c \2 \7)))
 
-(defn- method?
+;; Parsing & validation
+
+(s/def ::did/scheme #{"did"})
+
+(defn method?
   "Whether the string is a well-formed method name.
 
   See https://www.w3.org/TR/did-1.0/#did-syntax"
   [s]
   (and (not (str/blank? s))
        (every? method-char? s)))
+
+(s/def ::did/method (s/and string? method?))
 
 (defn msid?
   "Whether the string is a well-formed method-specific identifier.
@@ -65,8 +69,10 @@
       ;; Otherwise invalid
       :else false)))
 
+(s/def ::did/msid (s/and string? msid?))
+
 (defn parse
-  "Parse the input into a DID map with :scheme, :method, and :msid."
+  "Parse the input string into a map with :scheme, :method, and :msid."
   [input]
   (when-let [first-colon-idx (str/index-of input \:)]
     (when-let [second-colon-idx (str/index-of input \: (inc first-colon-idx))]
@@ -74,20 +80,18 @@
        :method (subs input (inc first-colon-idx) second-colon-idx)
        :msid (subs input (inc second-colon-idx))})))
 
-(s/def ::scheme #{"did"})
-(s/def ::method (s/and string? method?))
-(s/def ::msid (s/and string? msid?))
+(s/def ::did
+  (s/and string?
+         (s/conformer #(or (parse %) ::s/invalid))
+         (s/keys :req-un [::did/scheme ::did/method ::did/msid])))
 
-(s/def ::did-map (s/keys :req-un [::scheme ::method ::msid]))
+(defmulti method-spec
+  "Method-specific validation of the atproto DID."
+  :method)
 
-(s/def ::did (s/and string?
-                    (s/conformer #(or (parse %) ::s/invalid))
-                    ::did-map))
-
-(defmulti method-spec "Method-specific validation of the DID." :method)
-
-(s/def ::at-did (s/and ::did
-                       (s/multi-spec method-spec :method)))
+(s/def ::at-did
+  (s/and ::did
+         (s/multi-spec method-spec :method)))
 
 (defn conform
   "Conform the input into a atproto DID string.
@@ -123,8 +127,6 @@
     val))
 
 ;; PLC method
-
-(defn- base32-char? [c] (or (char-in c \a \z) (char-in c \2 \7)))
 
 (defmethod method-spec "plc"
   [_]
@@ -173,7 +175,7 @@
   (fn [{:keys [msid]}]
     (and
      ;; Ensure we can generate well formed URL from this DID
-     (s/valid? ::http/url (web-did-msid->url msid))
+     (s/valid? :http/url (web-did-msid->url msid))
      ;; Atproto does not allow path components in Web DIDs
      (not (str/index-of msid \:))
      ;; Atproto does not allow port numbers in Web DIDs, except for localhost
