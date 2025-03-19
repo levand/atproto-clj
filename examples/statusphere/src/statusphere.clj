@@ -14,12 +14,12 @@
             [compojure.route :as route]
             [next.jdbc :as jdbc]
             [next.jdbc.sql :as sql]
-            [atproto.client :as at]
+            [atproto.client :as client]
+            [atproto.tid :as tid]
             [atproto.identity]
             [atproto.session :as session]
-            [atproto.session.oauth :as oauth]
-            [atproto.tid]
             [statusphere.auth :as auth]
+            [atproto.session.oauth.client :as oauth-client]
             [statusphere.view :as view]
             [statusphere.db :as db])
   (:import [java.time Instant]
@@ -62,11 +62,11 @@
   [handler]
   (fn [{:keys [oauth-client session] :as request}]
     (or (when-let [did (::session/did session)]
-          (let [{:keys [error] :as oauth-session} @(oauth/restore oauth-client did)]
+          (let [{:keys [error] :as oauth-session} @(oauth-client/restore oauth-client did)]
             (when error
               (tap> oauth-session))
             (when (not error)
-              (handler (assoc request :atproto-client (at/client oauth-session))))))
+              (handler (assoc request :atproto-client @(client/create {:session oauth-session}))))))
         (handler request))))
 
 ;; Response helpers
@@ -94,8 +94,8 @@
     (html (view/login (:params req))))
 
   (POST "/login" req
-    (let [{:keys [error authorization-url] :as resp} @(oauth/authorize (:oauth-client req)
-                                                                       (get-in req [:params :handle]))]
+    (let [{:keys [error authorization-url] :as resp} @(oauth-client/authorize (:oauth-client req)
+                                                                              (get-in req [:params :handle]))]
       (if error
         (do
           (tap> resp)
@@ -103,8 +103,8 @@
         (r/redirect authorization-url))))
 
   (GET "/oauth/callback" req
-    (let [{:keys [error session] :as resp} @(oauth/callback (:oauth-client req)
-                                                            (:params req))]
+    (let [{:keys [error session] :as resp} @(oauth-client/callback (:oauth-client req)
+                                                                   (:params req))]
       (if error
         (do
           (tap> resp)
@@ -119,13 +119,13 @@
     (let [atproto-client (:atproto-client req)
           statuses (db/latest-statuses)
           my-status (when atproto-client
-                      (db/my-status (at/did atproto-client)))
+                      (db/my-status (client/did atproto-client)))
           profile (when atproto-client
-                    (let [{:keys [error] :as resp} @(at/query atproto-client
-                                                              {:op "com.atproto.repo.getRecord"
-                                                               :params {:repo (at/did atproto-client)
-                                                                        :collection "app.bsky.actor.profile"
-                                                                        :rkey "self"}})]
+                    (let [{:keys [error] :as resp} @(client/query atproto-client
+                                                                  {:op "com.atproto.repo.getRecord"
+                                                                   :params {:repo (client/did atproto-client)
+                                                                            :collection "app.bsky.actor.profile"
+                                                                            :rkey "self"}})]
                       (when error
                         (tap> resp))
                       (when (not error)
@@ -145,17 +145,17 @@
         (let [status {:status (:status (:params req))
                       :created-at (Instant/now)
                       :indexed-at (Instant/now)}
-              rkey (atproto.tid/next-tid)
+              rkey (tid/next-tid)
               record {:$type "xyz.statusphere.status"
                       :status (:status status)
                       :createdAt (str (:created-at status))}
-              {:keys [error uri] :as resp} @(at/procedure atproto-client
-                                                          {:op :com.atproto.repo.putRecord
-                                                           :params {:repo (at/did atproto-client)
-                                                                    :collection "xyz.statusphere.status"
-                                                                    :rkey rkey
-                                                                    :record record
-                                                                    :validate false}})]
+              {:keys [error uri] :as resp} @(client/procedure atproto-client
+                                                              {:op :com.atproto.repo.putRecord
+                                                               :params {:repo (client/did atproto-client)
+                                                                        :collection "xyz.statusphere.status"
+                                                                        :rkey rkey
+                                                                        :record record
+                                                                        :validate false}})]
           (if error
             (do
               (tap> resp)
@@ -165,7 +165,7 @@
               (db/insert-status!
                (merge status
                       {:uri uri
-                       :author-did (at/did atproto-client)}))
+                       :author-did (client/did atproto-client)}))
               (r/redirect "/")))))))
 
   (route/not-found

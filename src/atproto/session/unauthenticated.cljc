@@ -1,29 +1,40 @@
 (ns atproto.session.unauthenticated
-  (:require [atproto.interceptor :as i]
-            [atproto.handle :as handle]
+  "Unauthenticated session for public service/ops."
+  (:require [clojure.spec.alpha :as s]
+            [atproto.interceptor :as i]
+            [atproto.http :as http]
             [atproto.did :as did]
+            [atproto.handle :as handle]
             [atproto.identity :as identity]
             [atproto.session :as session]))
 
-(defn unauthenticated-session
-  [{:keys [service did handle]}]
-  (cond-> #::session{:service service
-                     :authenticated? false
-                     :refreshable? false}
-    did (assoc ::session/did did)
-    handle (assoc ::session/handle handle)))
+(s/def ::service (s/or :handle ::handle/handle
+                       :did ::did/at-did
+                       :url ::http/url))
+
+(defn- handle-identity-resolution
+  [{:keys [error pds did handle] :as resp} cb]
+  (if error
+    (cb resp)
+    (cb (cond-> #::session{:service pds
+                           :authenticated? false
+                           :refreshable? false}
+          did (assoc ::session/did did)
+          handle (assoc ::session/handle handle)))))
 
 (defn create
   "Take a handle, did, or app URL and return an unauthenticated session."
-  [input & {:as opts}]
+  [service & {:as opts}]
   (let [[cb val] (i/platform-async opts)]
-    (if (or (did/valid? input)
-            (handle/valid? input))
-      (identity/resolve input
-                        :callback
-                        (fn [{:keys [error pds did handle] :as resp}]
-                          (cb (if error resp (unauthenticated-session {:service pds
-                                                                       :did did
-                                                                       :handle handle})))))
-      (cb (unauthenticated-session {:service input})))
+    (if (not (s/valid? ::service service))
+      (cb (merge {:error "Invalid service."}
+                 (s/explain-data ::service service)))
+      (let [[type service] (s/conform ::service service)]
+        (case type
+          (:handle :did)
+          (identity/resolve service
+                            :callback
+                            #(handle-identity-resolution % cb))
+          :url
+          (cb {::session/service service}))))
     val))

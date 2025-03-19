@@ -1,5 +1,5 @@
-(ns atproto.session.oauth
-  "OAuth 2 authentication session."
+(ns atproto.session.oauth.client
+  "OAuth 2 client for atproto profile."
   (:refer-clojure :exclude [resolve])
   (:require [clojure.string :as str]
             [clojure.spec.alpha :as s]
@@ -10,99 +10,34 @@
             [atproto.jwt :as jwt]
             [atproto.identity :as identity]
             [atproto.session :as session]
-            [atproto.session.oauth.store :as store]))
+            [atproto.session.oauth.client.dpop :as dpop]
+            [atproto.session.oauth.client.store :as store]))
 
-;; atproto clients and servers must support ES256
-(def default-alg "ES256")
+;; todo:
+;; - implement (auto-)refresh
 
 ;; OAuth session
 
 (declare refresh-session auth-interceptor)
 
 (defn- oauth-session
+  "Create a OAuth session that can be used with `atproto.client`."
   [client {:keys [did handle pds tokens dpop-key] :as data}]
   (let [creds (select-keys data [:tokens :dpop-key])]
     (with-meta
-      #::session{:service pds
-                 :did did
-                 :handle handle
-                 :authenticated? true
-                 :refreshable? true}
+      (cond-> #::session{:service pds
+                         :authenticated? true
+                         :refreshable? true}
+        did (assoc ::session/did did)
+        handle (assoc ::session/handle handle))
       {`session/auth-interceptor (fn [_] (auth-interceptor client creds))
        `session/refresh-session (fn [_] (refresh-session client creds))})))
 
-;; DPoP
+;; atproto clients and servers must support ES256
+(def default-alg "ES256")
 
-(defn- generate-dpop-key []
-  (jwt/generate-jwk {:alg default-alg}))
-
-;; todo: where to store this? 1 per origin?
-;; host -> nonce
-(def nonce-store (atom {}))
-
-(defn- dpop-wrapper
-  [{:keys [iss dpop-key]}]
-  (fn [{:keys [::i/request] :as ctx}]
-    (let [{:keys [server-nonce method url headers]} request
-          url-map (http/parse-url url)
-          nonce (or server-nonce
-                    (get @nonce-store (:host url-map)))
-          ath (when-let [auth (:authorization headers)]
-                (when (str/starts-with? auth "DPoP ")
-                  (crypto/base64url-encode
-                   (crypto/sha256
-                    (subs auth 5)))))
-          proof (jwt/generate dpop-key
-                              {:typ "dpop+jwt"
-                               :alg default-alg
-                               :jwk (jwt/public-jwk dpop-key)}
-                              {:iss iss
-                               :jti (crypto/generate-nonce 12)
-                               :htm (str/upper-case (name method))
-                               :htu (http/serialize-url (dissoc url-map :query-params :fragment))
-                               :iat (crypto/now)
-                               :nonce nonce
-                               :ath ath})]
-      (-> ctx
-          (update ::i/request assoc-in [:headers :dpop] proof)
-          (assoc ::original-ctx ctx)
-          (assoc ::origin (:host url-map))
-          (assoc ::nonce nonce)))))
-
-(defn- use-dpop-nonce-error?
-  [{:keys [status headers body]}]
-  (case status
-    ;; resource server returns a 401 w/ WWW-Authenticate header
-    401 (let [{:keys [www-authenticate]} headers]
-          (and (str/starts-with? www-authenticate "DPoP")
-               (str/includes? www-authenticate "error=\"use_dpop_nonce\"")))
-    ;; authorization server returns a 400 w/ code in body
-    400 (= "use_dpop_nonce" (:error body))
-    false))
-
-(defn-  dpop-interceptor
-  [{:keys [iss dpop-key] :as opts}]
-  (let [wrap-dpop (dpop-wrapper opts)]
-    {::i/name ::dpop-interceptor
-     ::i/enter wrap-dpop
-     ::i/leave (fn [{:keys [::i/response ::original-ctx ::origin ::nonce] :as ctx}]
-                 (let [{:keys [status headers body]} response]
-                   ;; store the nonce for this origin if new
-                   (when-let [next-nonce (:dpop-nonce headers)]
-                     (when (not (= next-nonce nonce))
-                       (swap! nonce-store assoc origin next-nonce)))
-                   ;; retry if server asks to use their nonce
-                   (if (and (use-dpop-nonce-error? response)
-                            (not (:server-nonce (::i/request original-ctx))))
-                     (i/continue (wrap-dpop (assoc-in original-ctx [::i/request :server-nonce] (:dpop-nonce headers))))
-                     (dissoc ctx ::original-ctx ::origin ::nonce))))}))
-
-;; OAuth client
-
-;; todo:
-;; - ensure we have a ES256-compatible private key in the keyset
-(defn client
-  "Initialize the OAuth client."
+(defn create
+  "Create a new OAuth2 client."
   [{:keys [client-metadata keys state-store session-store] :as opts}]
   (let [jwks {"keys" (->> keys
                           (filter string?)
@@ -289,7 +224,7 @@
                (if error
                  (cb resp)
                  (let [server {:issuer (get-issuer client iss)
-                               :dpop-key (generate-dpop-key)}]
+                               :dpop-key (dpop/generate-key)}]
                    (if (not (:require_pushed_authorization_requests (:issuer server)))
                      (cb {:error "Server does not support PAR."})
                      (i/execute {::i/request {:opts opts
@@ -297,7 +232,7 @@
                                               :input input
                                               :issuer iss}
                                  ::i/queue [(par-interceptor client server)
-                                            (dpop-interceptor {:iss client_id
+                                            (dpop/interceptor {:iss client_id
                                                                :dpop-key (:dpop-key server)})
                                             json/interceptor
                                             http/interceptor]}
@@ -318,7 +253,7 @@
                                            :code_verifier verifier}
                                           (client-auth client issuer))
                              :dpop-key dpop-key}
-                ::i/queue [(dpop-interceptor {:iss client_id
+                ::i/queue [(dpop/interceptor {:iss client_id
                                               :dpop-key dpop-key})
                            json/interceptor
                            http/interceptor]}
@@ -406,7 +341,6 @@
       (cb (oauth-session client session-data)))
     val))
 
-;; todo
 (defn refresh-session
   [client creds]
   'todo)
@@ -421,9 +355,8 @@
                  (-> ctx
                      (assoc-in [::i/request :headers :authorization]
                                (str token_type " " access_token))
-                     (update ::i/queue #(cons (dpop-interceptor {:iss client_id
+                     (update ::i/queue #(cons (dpop/interceptor {:iss client_id
                                                                  :dpop-key dpop-key})
                                               %))))
      ::i/leave (fn [ctx]
-                 ;; todo: auto-refresh
                  ctx)}))

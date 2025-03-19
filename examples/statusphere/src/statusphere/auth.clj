@@ -1,6 +1,6 @@
 (ns statusphere.auth
-  (:require [atproto.session.oauth.store :as store]
-            [atproto.session.oauth :as oauth]
+  (:require [atproto.session.oauth.client :as oauth-client]
+            [atproto.session.oauth.client.store :as store]
             [next.jdbc :as jdbc]
             [next.jdbc.sql :as sql])
   (:import [java.net URLEncoder]))
@@ -46,7 +46,7 @@
                     (format "http://localhost?redirect_uri=%s&scope=%s"
                             (URLEncoder/encode redirect-uri)
                             (URLEncoder/encode scope)))]
-    (oauth/client
+    (oauth-client/create
      {:client-metadata {:client_name "AT Proto Statusphere Example App in Clojure"
                         :client_id client-id
                         :client_uri url

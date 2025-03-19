@@ -6,22 +6,21 @@ Multi-platform codebase designed to work in Clojure, ClojureScript and ClojureDa
 
 ## Usage
 
+### ATProto Client
+
 The workflow for utilizing the client is to:
 
-1. Obtain a session
-2. Use the session to instantiate a client
-2. Use the client to make `query` or `procedure` calls to public atproto application endpoints or Personal Data Server.
+1. Obtain a session by specifying the ATProto endpoint and (optionally) authentication credentials.
+2. Use the session to make query or procedure calls to ATProto or Bluesky endpoints.
 
 The SDK supports three types of session:
 1. Unauthenticated sessions to make API calls to public atproto application endpoints like [Bluesky](https://docs.bsky.app/docs/category/http-reference).
 2. Credentials sessions to use with your own username/password for CLI tools.
 3. OAuth sessions to connect to your users' Personal Data Servers and make API calls on their behalf.
 
-### ATProto client
-
 `query` and `procedure` calls use the "NSID" of the query or procedure, and a Clojure map of parameters.
 
-All calls (including the call to `init`) are asynchronous, and return immediately. The return value depends on platform:
+All calls (including the call to `create`) are asynchronous, and return immediately. The return value depends on platform:
 
 - Clojure: a Clojure promise.
 - ClojureScript: a core.async channel.
@@ -29,27 +28,21 @@ All calls (including the call to `init`) are asynchronous, and return immediatel
 
 You can also provide a `:channel`, `:callback` or `:promise` keyword option to recieve the return value. Not all options are supported on all platforms.
 
-
 ```clojure
-(require '[atproto.session.unauthenticated :as unauthenticated-session]
-          [atproto.session.credentials :as credentials-session]
-          [atproto.client :as at])
+(require '[atproto.client :as client])
 
-;; Unauthenticated session to atproto app
-(def session @(unauthenticated-session/create "https://public.api.bsky.app"))
+;; Unauthenticated client to public endpoint
+(def client @(client/create {:service "https://public.api.bsky.app"}))
 
 ;; Bluesky endpoints and their query params can be found here:
 ;; https://docs.bsky.app/docs/category/http-reference
 
-;; Credentials-based authentication session
-(def session @(credentials-session/create {:identifier "<me.bsky.social>"
-                                           :password "SECRET"}))
-
-;; Create the client with the session
-(def client (at/client session)
+;; Credentials-based authenticated client
+(def client @(client/create {:credentials {:identifier "<me.bsky.social>"
+                                           :password "SECRET"}}))
 
 ;; Issue a query with the client
-@(at/query client {:op :app.bsky.actor.getProfile
+@(client/query client {:op :app.bsky.actor.getProfile
                    :params {:actor "<me.bsky.social>"}})
 
 ;; => {:handle "<me.bsky.social>" ... }
