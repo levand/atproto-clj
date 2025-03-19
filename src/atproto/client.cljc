@@ -13,10 +13,10 @@
             [clojure.spec.alpha :as s]
             [atproto.interceptor :as i]
             [atproto.xrpc :as xrpc]
-            [atproto.session.client.config :as-alias config]
             [atproto.session :as session]
             [atproto.session.unauthenticated :as unauthenticated-session]
-            [atproto.session.credentials :as credentials-session]))
+            [atproto.session.credentials :as credentials-session]
+            [atproto.client.config :as-alias config]))
 
 (s/def ::config
   (s/and
@@ -31,12 +31,12 @@
 (s/def ::config/service ::unauthenticated-session/service)
 
 (defn create
-  "Create a new client with the config map.
+  "Create a new atproto client with the given config map.
 
   Supported keys:
   :session     (optional) The unauthenticated or authenticated session to use.
   :credentials (optional) Convenience to create a Credentials-based session (if no :session).
-  :service     (optional) Convenience to create an unauthenticated session (if no :session)."
+  :service     (optional) Convenience to create an Unauthenticated session (if no :session)."
   [{:keys [session credentials service] :as config} & {:as opts}]
   (let [[cb val] (i/platform-async opts)]
     (cond

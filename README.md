@@ -29,20 +29,20 @@ All calls (including the call to `create`) are asynchronous, and return immediat
 You can also provide a `:channel`, `:callback` or `:promise` keyword option to recieve the return value. Not all options are supported on all platforms.
 
 ```clojure
-(require '[atproto.client :as at])
+(require '[atproto.client :as client])
 
 ;; Unauthenticated client to public endpoint
-(def client @(at/client {:service "https://public.api.bsky.app"}))
+(def client @(client/create {:service "https://public.api.bsky.app"}))
 
 ;; Bluesky endpoints and their query params can be found here:
 ;; https://docs.bsky.app/docs/category/http-reference
 
 ;; Credentials-based authenticated client
-(def client @(at/client {:credentials {:identifier "<me.bsky.social>"
-                                       :password "SECRET"}}))
+(def client @(client/create {:credentials {:identifier "<me.bsky.social>"
+                                           :password "SECRET"}}))
 
 ;; Issue a query with the client
-@(at/query client {:op :app.bsky.actor.getProfile
+@(client/query client {:op :app.bsky.actor.getProfile
                    :params {:actor "<me.bsky.social>"}})
 
 ;; => {:handle "<me.bsky.social>" ... }
