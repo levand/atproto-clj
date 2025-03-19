@@ -27,3 +27,4 @@ src/atproto/scratch.clj
 dev/
 config.edn
 *.db
+.dir-locals.el

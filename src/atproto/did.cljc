@@ -86,15 +86,15 @@
 
 (defmulti method-spec "Method-specific validation of the DID." :method)
 
-(s/def ::at-proto-did (s/and ::did
-                             (s/multi-spec method-spec :method)))
+(s/def ::at-did (s/and ::did
+                       (s/multi-spec method-spec :method)))
 
 (defn conform
   "Conform the input into a atproto DID string.
 
   Return :atproto.did/invalid if the input is not a valid atproto DID string."
   [input]
-  (let [atproto-did-map (s/conform ::at-proto-did input)]
+  (let [atproto-did-map (s/conform ::at-did input)]
     (if (= atproto-did-map ::s/invalid)
       ::invalid
       (let [{:keys [scheme method msid]} atproto-did-map]
