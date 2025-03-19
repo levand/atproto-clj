@@ -87,7 +87,7 @@
                             (enumeration-seq)))})
     (catch NamingException ne
       {:error "DNS name not found"
-       :exception ne})))
+       :exception (Throwable->map ne)})))
 
 ;; To configure timeout and retries,
 ;; See https://download.oracle.com/otn_hosted_doc/jdeveloper/904preview/jdk14doc/docs/guide/jndi/jndi-dns.html

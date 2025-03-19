@@ -13,12 +13,18 @@
             [atproto.interceptor :as i]
             [atproto.identity :as identity]
             [atproto.xrpc :as xrpc]
-            [atproto.session :as session]))
+            [atproto.session :as session]
+            [atproto.lexicon :as lexicon]))
 
 (defn client
-  "Create a new client for the given session."
-  [session]
-  {:session session})
+  "Create a new client for the config map.
+
+  Supported keys:
+  :session    Session (see atproto.session)
+  :validate?  Whether to validate the arguments to query and procedure."
+  [{:keys [session validate?]}]
+  {:session session
+   :validate? validate?})
 
 (defn did
   "The did of the authenticated user, or nil."
@@ -27,10 +33,21 @@
     (and (::session/authenticated? session)
          (::session/did session))))
 
+(defn invoke
+  [client args & {:as opts}]
+  (let [[cb val] (i/platform-async opts)]
+    (if (and (:validate? client)
+             (not (lexicon/valid-call? args)))
+      (cb (lexicon/invalid-call args))
+      (if (lexicon/procedure? args)
+        (xrpc/procedure (:session client) args :callback cb)
+        (xrpc/query (:session client) args :callback cb)))
+    val))
+
 (defn procedure
   [client args & {:as opts}]
-  (xrpc/procedure (:session client) args opts))
+  (invoke client args opts))
 
 (defn query
   [client args & {:as opts}]
-  (xrpc/query (:session client) args opts))
+  (invoke client args opts))
