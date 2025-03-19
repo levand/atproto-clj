@@ -53,7 +53,7 @@
   [args]
   (when-let [nsid (name (:op args))]
     (if (not (loaded-schema nsid))
-      (throw (ex-info (str "Unknown schema: " nsid)))
+      (throw (ex-info (str "Unknown schema: " nsid) {}))
       (= "procedure" (get-in @loaded-schemas [nsid :defs :main :type])))))
 
 ;; Validation

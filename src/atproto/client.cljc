@@ -68,23 +68,22 @@
   (and (::session/authenticated? session)
        (::session/did session)))
 
-(defn invoke
+(defn procedure
+  "Issue a procedure call with the given arguments."
   [client args & {:as opts}]
   (let [[cb val] (i/platform-async opts)]
     (if (and (::validate? client)
              (not (lexicon/valid-call? args)))
       (cb (lexicon/invalid-call args))
-      (if (lexicon/procedure? args)
-        (xrpc/procedure (:session client) args :callback cb)
-        (xrpc/query (:session client) args :callback cb)))
+      (xrpc/procedure (::session client) args :callback cb))
     val))
-
-(defn procedure
-  "Issue a procedure call with the given arguments."
-  [client args & {:as opts}]
-  (invoke client args opts))
 
 (defn query
   "Issue a query with the igven arguments."
   [client args & {:as opts}]
-  (invoke client args opts))
+  (let [[cb val] (i/platform-async opts)]
+    (if (and (::validate? client)
+             (not (lexicon/valid-call? args)))
+      (cb (lexicon/invalid-call args))
+      (xrpc/query (::session client) args :callback cb))
+    val))

@@ -203,7 +203,7 @@
 (defonce server (atom nil))
 
 (defn start-dev []
-  (let [env (read-env)]
+  (let [env (read-env "./config.edn")]
     (reset! server
             (run-jetty (handler env)
                        {:port (:port env)
