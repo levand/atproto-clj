@@ -72,7 +72,6 @@
 (def ^:private parse-json-xf
   (let [parse-fn (json/parse-json-fn
                    {:key-fn keyword
-                    :profile :mutable
                     :async? false
                     :bufsize 8192})]
     (map parse-fn)))
@@ -100,11 +99,13 @@
    - host (default: jetstream1.us-east.bsky.network)
    - cursor (value in μs) (default: none)
    - wanted-collections (coll of collection ids) (default: nil (i.e. everything))
-   - max-retries (default: 4)"
-  [ch & {:keys [host cursor control-ch max-retries wanted-collections]
+   - max-retries (default: 4)
+   - close? (default: true) - close the ch upon disconnection?"
+  [ch & {:keys [host cursor control-ch max-retries wanted-collections close?]
          :or {host "jetstream1.us-east.bsky.network"
               control-ch (a/chan)
-              max-retries 4}}]
+              max-retries 4
+              close? true}}]
   (let [opts {:host host
               :cursor cursor
               :control-ch control-ch
@@ -121,7 +122,8 @@
                               (log/info "Shutdown command recieved")
                               (a/close! listener-ch)
                               (.sendClose socket WebSocket/NORMAL_CLOSURE "complete")
-                              (.abort socket))))
+                              (.abort socket)
+                              (when close? (a/close! ch)))))
         listener-ch ([data]
                      (if-not data
                        (do
